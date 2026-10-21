@@ -1,0 +1,17 @@
+- id: HOST_DISK_PRESSURE_CRITICAL
+  title: Filesystem Utilization Exceeds 85%
+  severity: HIGH
+  category: Data & Storage
+  description: One or more filesystems or mounts on the host node exceed 85% capacity, risking write stalls, Docker image pulls failing, and etcd corruption.
+  remediation: Clean up unreferenced Docker images and containers (`docker system prune -af`). Rotate or truncate logs under `/var/log`. Increase partition size if needed.
+  target: metrics
+  condition: "metric_name = 'disk_usage_percent' AND metric_value >= 85.0"
+
+- id: NO_SPACE_LEFT_ON_DEVICE
+  title: No Space Left on Device Errors Detected
+  severity: CRITICAL
+  category: Data & Storage
+  description: System processes or container runtimes encountered write failures due to ENOSPC (No space left on device).
+  remediation: Identify which filesystem filled up (`df -h`). Clear temporary directories (`/tmp`, `/var/tmp`) and prune Docker/containerd storage.
+  target: events
+  condition: "issue_type = 'Disk Full' OR message ILIKE '%no space left on device%'"

@@ -1,0 +1,17 @@
+- id: VAULT_CONNECTION_REFUSED
+  title: HashiCorp Vault Connection Refused
+  severity: CRITICAL
+  category: Security & Secret Management
+  description: Microservices or admission webhooks failed to communicate with HashiCorp Vault on port 8200 due to connection refused.
+  remediation: Check Vault cluster status (`vault status`). Ensure Vault pods are running and unsealed. Verify raft/consul backend storage availability.
+  target: events
+  condition: "(issue_type = 'Connection Refused' OR message ILIKE '%connection refused%') AND (namespace = 'vault' OR message ILIKE '%8200%' OR pod ILIKE '%vault%')"
+
+- id: VAULT_SEALED_OR_UNAVAILABLE
+  title: Vault Cluster Sealed or Unresponsive
+  severity: CRITICAL
+  category: Security & Secret Management
+  description: Requests to HashiCorp Vault returned HTTP 503 or sealed status errors, blocking secrets retrieval for dependent workloads.
+  remediation: Execute `vault operator unseal` with necessary unseal keys. Verify raft quorum across Vault nodes.
+  target: events
+  condition: "message ILIKE '%vault is sealed%' OR message ILIKE '%Vault cluster is not initialized%'"

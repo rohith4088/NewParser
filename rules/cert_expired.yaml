@@ -1,0 +1,8 @@
+- id: TLS_CERTIFICATE_EXPIRED
+  title: TLS / x509 Certificate Has Expired
+  severity: CRITICAL
+  category: Security & Secret Management
+  description: One or more services failed TLS handshake because an x509 certificate has expired or is invalid.
+  remediation: Check certificate validity (`kubeadm certs check-expiration` or inspect ingress/webhook secret validity). Renew and reload expiring certificates.
+  target: events
+  condition: "issue_type = 'Certificate Expired' OR message ILIKE '%certificate has expired%' OR message ILIKE '%x509: certificate signed by unknown authority%'"

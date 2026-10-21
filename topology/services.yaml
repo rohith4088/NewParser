@@ -1,0 +1,344 @@
+# Service topology: namespace -> category, description and containers.
+# Generated once from service_mapping.md; this file is now the source of
+# truth and is meant to be edited by hand.
+version: 1
+generated_from: service_mapping.md
+categories:
+- id: application-microservices-apis
+  name: Application Microservices & APIs
+  description: These namespaces contain the core business logic, user interfaces, and specific on-premise
+    controllers.
+  namespaces:
+    ccs-system:
+      description: This is the primary namespace for the Cloud Control Service application stack, handling
+        core platform functions.
+      containers:
+      - account-management
+      - account-management-celery-beat
+      - account-management-celery-worker
+      - activate-inventory
+      - app-catalog
+      - app-provision
+      - audit-trail
+      - audit-trail-consumer
+      - audit-trail-reader
+      - frontend
+      - geo
+      - msg-worker
+      - notifications-service
+      - notification-archival-worker
+      - notification-channel-worker
+      - notification-request-worker
+      - notifications-service-archival-job
+      - subscription-management
+      - ui-doorway-celery-beat
+      - ui-doorway-celery-worker
+      container_descriptions:
+        account-management: Manages user accounts, authentication rules, and background tasks.
+        account-management-celery-beat: Manages user accounts, authentication rules, and background tasks.
+        account-management-celery-worker: Manages user accounts, authentication rules, and background
+          tasks.
+        activate-inventory: Handles activation workflows for new hardware or software inventory.
+        app-catalog: Manages the available applications and provisions them to tenants.
+        app-provision: Manages the available applications and provisions them to tenants.
+        audit-trail: Ingests, processes, and serves audit logs for compliance and monitoring.
+        audit-trail-consumer: Ingests, processes, and serves audit logs for compliance and monitoring.
+        audit-trail-reader: Ingests, processes, and serves audit logs for compliance and monitoring.
+        frontend: The primary UI web server for the application.
+        geo: Geolocation-related services.
+        msg-worker: Generic messaging queue worker.
+        notifications-service: Manages sending, routing, and archiving user notifications (emails, alerts).
+        notification-archival-worker: Manages sending, routing, and archiving user notifications (emails,
+          alerts).
+        notification-channel-worker: Manages sending, routing, and archiving user notifications (emails,
+          alerts).
+        notification-request-worker: Manages sending, routing, and archiving user notifications (emails,
+          alerts).
+        notifications-service-archival-job: Manages sending, routing, and archiving user notifications
+          (emails, alerts).
+        subscription-management: Manages tenant licensing and subscriptions.
+        ui-doorway-celery-beat: Background job processors for UI-triggered tasks.
+        ui-doorway-celery-worker: Background job processors for UI-triggered tasks.
+    onprem:
+      description: Specific controllers and agents required for maintaining the on-premise deployment.
+      containers:
+      - certificate-management
+      - certificate-management-expiration-cronjob
+      - certificate-management-rotation-cronjob
+      - cleanup-bundles
+      - pod-cleanup
+      - log-rotate
+      - cluster-config-discovery
+      - health-checks
+      - health-checks-cronjob
+      - health-check-job
+      - sc-agent
+      - support-logs
+      - support-logs-cronjob
+      - version-manager
+      - version-manager-cronjob
+      container_descriptions:
+        certificate-management: Automates the rotation and lifecycle of internal TLS/SSL certificates.
+        certificate-management-expiration-cronjob: Automates the rotation and lifecycle of internal TLS/SSL
+          certificates.
+        certificate-management-rotation-cronjob: Automates the rotation and lifecycle of internal TLS/SSL
+          certificates.
+        cleanup-bundles: Maintenance cronjobs to prevent disk exhaustion.
+        pod-cleanup: Maintenance cronjobs to prevent disk exhaustion.
+        log-rotate: Maintenance cronjobs to prevent disk exhaustion.
+        cluster-config-discovery: Discovers and synchronizes local cluster configurations.
+        health-checks: Periodic validation of system stability.
+        health-checks-cronjob: Periodic validation of system stability.
+        health-check-job: Periodic validation of system stability.
+        sc-agent: likely a Storage Controller or Support Connectivity agent communicating with external
+          management.
+        support-logs: Collects logs into bundles for troubleshooting.
+        support-logs-cronjob: Collects logs into bundles for troubleshooting.
+        version-manager: Manages application updates and versioning logic.
+        version-manager-cronjob: Manages application updates and versioning logic.
+    unified-api:
+      description: API Gateway for routing incoming requests to the appropriate backend microservices
+      containers:
+      - unified-api-routing
+      container_descriptions:
+        unified-api-routing: API Gateway for routing incoming requests to the appropriate backend microservices
+    ccs-pingfederate:
+      description: Enterprise identity, single sign-on (SSO), and access management
+      containers:
+      - pingfederate
+      - pingfederate-admin
+- id: databases-data-stores
+  name: Databases & Data Stores
+  description: Stateful services that persist the application's data.
+  namespaces:
+    cassandra:
+      description: A distributed NoSQL database used for high-availability data storage. Reaper handles
+        automated repairs.
+      containers:
+      - cassandra
+      - reaper
+      - server-system-logger
+      - cass-operator
+      - k8ssandra-operator
+    cassandra-ccs:
+      description: A distributed NoSQL database used for high-availability data storage. Reaper handles
+        automated repairs.
+      containers:
+      - cassandra
+      - reaper
+      - server-system-logger
+      - cass-operator
+      - k8ssandra-operator
+    postgresql-ccs:
+      description: Relational database for transactional data. Pgbouncer acts as a connection pooler to
+        prevent database connection exhaustion.
+      containers:
+      - postgres
+      - pgbouncer
+      - manager
+    postgresql-dscc:
+      description: Relational database for transactional data. Pgbouncer acts as a connection pooler to
+        prevent database connection exhaustion.
+      containers:
+      - postgres
+      - pgbouncer
+      - manager
+    cnpg-system:
+      description: Relational database for transactional data. Pgbouncer acts as a connection pooler to
+        prevent database connection exhaustion.
+      containers:
+      - postgres
+      - pgbouncer
+      - manager
+    redis-ccs:
+      description: In-memory caching system used to speed up session data and frequent database queries.
+      containers:
+      - aof-checker
+      container_descriptions:
+        aof-checker: Redis
+    redis-dscc:
+      description: In-memory caching system used to speed up session data and frequent database queries.
+      containers:
+      - aof-checker
+      container_descriptions:
+        aof-checker: Redis
+    opensearch:
+      description: Distributed search and analytics engine, typically used for application search features
+        or log analysis.
+      containers:
+      - opensearch
+      - operator-controller-manager
+    opensearch-ccs:
+      description: Distributed search and analytics engine, typically used for application search features
+        or log analysis.
+      containers:
+      - opensearch
+      - operator-controller-manager
+    opensearch-dscc:
+      description: Distributed search and analytics engine, typically used for application search features
+        or log analysis.
+      containers:
+      - opensearch
+      - operator-controller-manager
+    druid:
+      description: Apache Druid is a high-performance, real-time analytics database. Zookeeper is used
+        for coordination.
+      containers:
+      - broker
+      - coordinator
+      - historical
+      - overlord
+      - vault-agent
+      - druid-zookeeper
+    zk-druid:
+      description: Apache Druid is a high-performance, real-time analytics database. Zookeeper is used
+        for coordination.
+      containers:
+      - broker
+      - coordinator
+      - historical
+      - overlord
+      - vault-agent
+      - druid-zookeeper
+    minio:
+      description: S3-compatible high-performance object storage.
+      containers:
+      - sidecar
+      - operator
+    minio-operator:
+      description: S3-compatible high-performance object storage.
+      containers:
+      - sidecar
+      - operator
+- id: event-streaming-messaging
+  name: Event Streaming & Messaging
+  description: Services that handle asynchronous communication between microservices.
+  namespaces:
+    kafka-ccs:
+      description: Distributed event streaming platform (Apache Kafka) managed by the Strimzi operator.
+        Used for high-throughput message processing (like audit trails).
+      containers:
+      - kafka
+      - kafka-health-checker
+      - topic-operator
+      - user-operator
+      - strimzi-cluster-operator
+      - kafka-kafka-exporter
+    kafka-dscc:
+      description: Distributed event streaming platform (Apache Kafka) managed by the Strimzi operator.
+        Used for high-throughput message processing (like audit trails).
+      containers:
+      - kafka
+      - kafka-health-checker
+      - topic-operator
+      - user-operator
+      - strimzi-cluster-operator
+      - kafka-kafka-exporter
+    kafka-operator:
+      description: Distributed event streaming platform (Apache Kafka) managed by the Strimzi operator.
+        Used for high-throughput message processing (like audit trails).
+      containers:
+      - kafka
+      - kafka-health-checker
+      - topic-operator
+      - user-operator
+      - strimzi-cluster-operator
+      - kafka-kafka-exporter
+    rabbitmq-system:
+      description: Message broker for queuing tasks (e.g., Celery workers).
+      containers:
+      - operator
+      container_descriptions:
+        operator: RabbitMQ instance
+    nats:
+      description: A lightweight, high-performance messaging system often used for microservice control
+        planes.
+      containers:
+      - istio-proxy
+      container_descriptions:
+        istio-proxy: NATS instance
+- id: core-infrastructure-platform
+  name: Core Infrastructure & Platform
+  description: Fundamental Kubernetes networking, security, and storage controllers.
+  namespaces:
+    kube-system:
+      description: Core Kubernetes components. Calico handles networking (CNI), CoreDNS resolves internal
+        service names, and metrics-server provides CPU/Memory metrics for autoscaling.
+      containers:
+      - calico-node
+      - calico-kube-controllers
+      - coredns
+      - metrics-server
+    base:
+      description: Platform security tools. Cert-manager provisions internal certificates. OpenBao/Vault
+        manages secrets securely.
+      containers:
+      - cert-manager-cainjector
+      - cert-manager-webhook
+      - openbao
+      - vault-onprem-sidecar
+      - sidecar-injector
+    istio-system:
+      description: Service mesh (Istio) that handles mTLS encryption, load balancing, and traffic routing
+        between microservices.
+      containers:
+      - discovery
+      - istio-proxy
+    metallb-system:
+      description: A network load-balancer implementation for bare-metal/on-premise Kubernetes clusters,
+        giving external IPs to services.
+      containers:
+      - controller
+      - speaker
+    mayastor:
+      description: Software-defined storage layer. Mayastor provides highly available block storage for
+        databases, and OpenEBS provides NFS file sharing.
+      containers:
+      - api-rest
+      - operator-diskpool
+      - mayastor-localpv-provisioner
+      - openebs-nfs-nfs-provisioner
+    openebs-nfs:
+      description: Software-defined storage layer. Mayastor provides highly available block storage for
+        databases, and OpenEBS provides NFS file sharing.
+      containers:
+      - api-rest
+      - operator-diskpool
+      - mayastor-localpv-provisioner
+      - openebs-nfs-nfs-provisioner
+    cloudops:
+      description: Log forwarding and aggregation. This is the service that originally captured these
+        logs.
+      containers:
+      - fluent-bit
+      - fluent-operator
+    monitoring:
+      description: Collects cluster metrics (Prometheus) and routes system alerts (Alertmanager).
+      containers:
+      - prometheus
+      - alertmanager
+      - alert-logger
+    monitoring-dscc:
+      description: Collects cluster metrics (Prometheus) and routes system alerts (Alertmanager).
+      containers:
+      - prometheus
+      - alertmanager
+      - alert-logger
+    velero:
+      description: Used to backup and restore Kubernetes cluster resources and persistent volumes.
+      containers:
+      - velero
+    container-registry:
+      description: A local private repository for storing the Docker container images used by the cluster.
+      containers:
+      - docker-registry
+    acp-system:
+      description: Application/Cluster provisioning discovery mechanisms.
+      containers:
+      - acp-discovery-service
+      - acp-discovery-kube-watcher
+    brigade:
+      description: Event-driven scripting and workflow automation tool for Kubernetes.
+      containers:
+      - brigade
+      - brigade-vacuum

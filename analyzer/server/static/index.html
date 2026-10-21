@@ -1,0 +1,1332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HPE OnPrem Analyzer</title>
+  <meta name="description" content="HPE OnPrem support bundle telemetry, root cause, and cluster diagnostics">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Persistent Active Bundle Header -->
+    <header class="top-nav" id="topNav">
+      <div class="brand">
+        <div class="brand-hpe-mark" title="HPE Enterprise Design"></div>
+        <div class="brand-text-group">
+          <span class="brand-title">HPE OnPrem Analyzer</span>
+        </div>
+      </div>
+
+      <!-- Active Session Information -->
+      <div class="active-bundle-info" id="activeBundleInfo">
+        <div class="bundle-pill" id="bundlePill" title="Current Active Bundle - Click to switch session">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          <span class="bundle-name" id="activeBundleName">Loading bundle...</span>
+          <span class="bundle-stat" id="activeBundleStats">0 events</span>
+        </div>
+      </div>
+
+      <!-- Persistent Action Controls -->
+      <div class="nav-actions">
+        <!-- AI Copilot Trigger Button -->
+        <button class="btn btn-ai-sparkle" id="btnOpenAiChat" title="Open AI Diagnostic Copilot (Local Air-Gapped Ollama)">
+          <span>AI Copilot</span>
+          <span class="ai-status-badge">
+            <span class="ai-status-dot offline" id="aiStatusDot"></span>
+            <span id="aiStatusText">offline</span>
+          </span>
+        </button>
+
+        <!-- Multi-Agent RCA Trigger Button -->
+        <button class="btn btn-secondary" id="btnOpenAgenticTriageTop" title="Run Hierarchical Multi-Agent Root Cause Analysis">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;margin-right:5px;">
+            <circle cx="12" cy="5" r="3"></circle>
+            <circle cx="6" cy="18" r="3"></circle>
+            <circle cx="18" cy="18" r="3"></circle>
+            <path d="M12 8v4M9 15l-1.5 1.5M15 15l1.5 1.5"></path>
+          </svg>
+          <span>Agentic RCA</span>
+        </button>
+
+        <button class="btn btn-accent" id="btnOpenExplorerModal" title="Selective Ingest: Explore bundle parts (Cluster vs Host), dynamic services, and set parse priority order">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+          Selective Ingest &amp; Explorer
+          <span class="queue-nav-badge" id="queueNavBadge" style="display:none;">0</span>
+        </button>
+
+        <button class="btn btn-secondary" id="btnSwitchSession" title="Switch or inspect other analyzed sessions">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="1 4 1 10 7 10"></polyline>
+            <polyline points="23 20 23 14 17 14"></polyline>
+            <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
+          </svg>
+          Switch Session
+        </button>
+
+        <button class="btn btn-primary" id="btnUploadBundle" title="Upload or ingest a new support bundle archive">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          Upload New Bundle
+        </button>
+      </div>
+    </header>
+
+    <!-- Global Time Filter Toggle Bar -->
+    <div class="filter-toggle-bar">
+      <button class="btn-toggle-filter" id="btnToggleFilterToolbar" type="button" title="Click to show or hide timeline &amp; filters">
+        <div class="filter-toggle-left">
+          <svg class="icon filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+          </svg>
+          <span class="filter-toggle-title">Telemetry Time Window &amp; Global Filters</span>
+        </div>
+        <div class="filter-toggle-right">
+          <span class="filter-active-summary" id="filterActiveSummary">Full Session &bull; All Scopes</span>
+          <svg class="icon chevron-icon" id="filterChevron" style="transform: rotate(-90deg);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </div>
+      </button>
+    </div>
+
+    <!-- Global Time Filter Toolbar -->
+    <section class="filter-toolbar collapsed" id="filterToolbar">
+      <div class="filter-row">
+        <!-- Date-Range Pickers -->
+        <div class="time-filter-group">
+          <div class="input-with-label">
+            <label for="inputFromTime">From (UTC):</label>
+            <input type="text" id="inputFromTime" class="datetime-input" placeholder="YYYY-MM-DD HH:mm:ss" title="UTC format: YYYY-MM-DD HH:mm:ss">
+          </div>
+          <div class="input-with-label">
+            <label for="inputToTime">To (UTC):</label>
+            <input type="text" id="inputToTime" class="datetime-input" placeholder="YYYY-MM-DD HH:mm:ss" title="UTC format: YYYY-MM-DD HH:mm:ss">
+          </div>
+          <button class="btn btn-sm btn-accent" id="btnApplyTimeFilter">Apply Window</button>
+          <button class="btn btn-sm btn-outline" id="btnResetTimeFilter">Full Range</button>
+          <span class="bundle-range-badge" id="bundleRangeBadge"></span>
+        </div>
+
+        <!-- Quick Time Window Presets -->
+        <div class="time-presets" id="timePresets">
+          <button class="preset-btn" data-window="15m">15m</button>
+          <button class="preset-btn" data-window="1h">1h</button>
+          <button class="preset-btn" data-window="6h">6h</button>
+          <button class="preset-btn" data-window="24h">24h</button>
+          <button class="preset-btn active" data-window="all">All</button>
+        </div>
+
+        <!-- Scope / Origin Quick Counts & Filter -->
+        <div class="origin-pills" id="originPills">
+          <div class="origin-pill active" data-origin="all" title="View all logs (Cluster & Host)">
+            <span class="pill-label">All Scopes</span>
+            <span class="pill-val" id="cntAllOrigin">0</span>
+          </div>
+          <div class="origin-pill cluster" data-origin="cluster" title="Filter by Cluster microservice logs">
+            <span class="pill-label">Cluster Logs</span>
+            <span class="pill-val" id="cntCluster">0</span>
+          </div>
+          <div class="origin-pill host" data-origin="host" title="Filter by Host Snapshot logs">
+            <span class="pill-label">Host Snapshot</span>
+            <span class="pill-val" id="cntHost">0</span>
+          </div>
+        </div>
+
+        <!-- Level Quick Counts -->
+        <div class="level-pills" id="levelPills">
+          <div class="level-pill fatal" data-level="FATAL" title="Filter by FATAL">
+            <span class="pill-label">FATAL</span>
+            <span class="pill-val" id="cntFatal">0</span>
+          </div>
+          <div class="level-pill error" data-level="ERROR" title="Filter by ERROR">
+            <span class="pill-label">ERROR</span>
+            <span class="pill-val" id="cntError">0</span>
+          </div>
+          <div class="level-pill warn" data-level="WARN" title="Filter by WARN">
+            <span class="pill-label">WARN</span>
+            <span class="pill-val" id="cntWarn">0</span>
+          </div>
+          <div class="level-pill info" data-level="INFO" title="Filter by INFO">
+            <span class="pill-label">INFO</span>
+            <span class="pill-val" id="cntInfo">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Warning if selected filter matches 0 events -->
+      <div id="filterZeroWarning" class="filter-zero-alert" style="display:none;">
+        <svg class="icon alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0;">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <span id="filterZeroWarningText">No events found in selected time range.</span>
+        <button class="btn btn-sm btn-outline" id="btnAlertResetRange" style="margin-left:auto;">Reset to Full Range</button>
+      </div>
+
+      <!-- Interactive Telemetry Timeline & Anomaly Heatmap -->
+      <div class="timeline-container" id="timelineContainer">
+        <div class="timeline-header">
+          <div class="timeline-header-left">
+            <span class="timeline-title">Event Volume Timeline &amp; Spike Heatmap</span>
+            <div class="timeline-mode-toggle" id="timelineModeToggle" role="group" aria-label="Timeline View Mode">
+              <button type="button" class="timeline-mode-btn active" data-mode="wave" id="btnTimelineModeWave" title="Smooth Stacked Density Wave">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M2 12c2.5-5 5-5 7.5 0s5 5 7.5 0 4.5-2.5 5-2.5"></path>
+                </svg>
+                <span>Density Wave</span>
+              </button>
+              <button type="button" class="timeline-mode-btn" data-mode="matrix" id="btnTimelineModeMatrix" title="Multi-Tier Thermal Anomaly Matrix">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="5" height="4" rx="1"></rect>
+                  <rect x="10" y="3" width="5" height="4" rx="1"></rect>
+                  <rect x="17" y="3" width="4" height="4" rx="1"></rect>
+                  <rect x="3" y="10" width="5" height="4" rx="1"></rect>
+                  <rect x="10" y="10" width="5" height="4" rx="1"></rect>
+                  <rect x="17" y="10" width="4" height="4" rx="1"></rect>
+                  <rect x="3" y="17" width="5" height="4" rx="1"></rect>
+                  <rect x="10" y="17" width="5" height="4" rx="1"></rect>
+                  <rect x="17" y="17" width="4" height="4" rx="1"></rect>
+                </svg>
+                <span>Thermal Matrix</span>
+              </button>
+            </div>
+          </div>
+          <div class="timeline-header-right">
+            <span class="timeline-hint" id="timelineRangeLabel">Showing complete session</span>
+            <button class="btn btn-xs btn-outline timeline-reset-zoom-btn" id="btnTimelineResetZoom" style="display:none;" title="Reset time zoom to active window">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                <polyline points="3 3 3 8 8 8"></polyline>
+              </svg>
+              <span>Reset Zoom</span>
+            </button>
+          </div>
+        </div>
+        <div class="timeline-chart" id="timelineChart">
+          <!-- Dynamically populated SVG or thermal matrix -->
+        </div>
+        <!-- Floating Glassmorphic Telemetry Tooltip -->
+        <div class="timeline-glass-tooltip" id="timelineTooltip" style="display:none;"></div>
+      </div>
+    </section>
+
+    <!-- Main Content Area with Navigation Tabs -->
+    <main class="main-content">
+      <div class="view-tabs-wrapper">
+        <nav class="view-tabs" id="viewTabs">
+          <button class="tab-btn active" data-view="overview">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            Overview
+          </button>
+          <button class="tab-btn" data-view="logs">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="8" y1="6" x2="21" y2="6"></line>
+              <line x1="8" y1="12" x2="21" y2="12"></line>
+              <line x1="8" y1="18" x2="21" y2="18"></line>
+              <line x1="3" y1="6" x2="3.01" y2="6"></line>
+              <line x1="3" y1="12" x2="3.01" y2="12"></line>
+              <line x1="3" y1="18" x2="3.01" y2="18"></line>
+            </svg>
+            Log Stream Explorer
+          </button>
+          <button class="tab-btn" data-view="findings">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+            Root Cause (<span id="tabCountFindings">0</span>)
+          </button>
+          <button class="tab-btn" data-view="k8s">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+              <line x1="6" y1="6" x2="6.01" y2="6"></line>
+              <line x1="6" y1="18" x2="6.01" y2="18"></line>
+            </svg>
+            Kubernetes State (<span id="tabCountK8s">0</span>)
+          </button>
+          <button class="tab-btn" data-view="anomalies">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+            Spike Correlator (<span id="tabCountAnomalies">0</span>)
+          </button>
+          <button class="tab-btn" data-view="namespaces">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            Topology Breakdown
+          </button>
+          <button class="tab-btn tab-btn-ai" data-view="ai" id="tabBtnAi" title="AI Diagnostic Copilot">
+            AI Copilot
+          </button>
+          <button class="tab-btn tab-btn-agentic" data-view="agentic" id="tabBtnAgentic" title="Hierarchical Multi-Agent Triage (H-MAT)">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;margin-right:4px;">
+              <circle cx="12" cy="5" r="3"></circle>
+              <circle cx="6" cy="18" r="3"></circle>
+              <circle cx="18" cy="18" r="3"></circle>
+              <path d="M12 8v4M9 15l-1.5 1.5M15 15l1.5 1.5"></path>
+            </svg>
+            Agentic Triage
+          </button>
+        </nav>
+      </div>
+
+      <!-- View 0: Dedicated Landing Page Overview Hub -->
+      <section class="tab-view active" id="viewOverview">
+        <div class="overview-hub" id="overviewHub">
+          <div class="overview-hub-header">
+            <div class="hub-title-group">
+              <div class="hub-eyebrow">
+                
+              </div>
+              <h2 class="hub-heading">System Diagnostics &amp; Telemetry Hub</h2>
+              <p class="hub-subtext">Executive support bundle telemetry, automated root cause signatures, and cluster diagnostics.</p>
+            </div>
+            <!-- <div class="hub-system-status">
+              <div class="health-gauge-pill" id="healthGaugePill">
+                <span class="status-pulse-dot"></span>
+                <span class="gauge-label">SYSTEM HEALTH:</span>
+                <span class="gauge-value" id="systemHealthBadge">ACTIVE TRIAGE</span>
+              </div>
+            </div> -->
+          </div>
+
+          <!-- Quick-Jump Full Screen Navigation Cards -->
+          <div class="quick-jump-grid">
+            <div class="quick-jump-card glass" data-jump="logs">
+              <div class="jump-card-top">
+                <div class="jump-icon-wrap emerald">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                  </svg>
+                </div>
+                <span class="jump-card-tag">TELEMETRY STREAM</span>
+              </div>
+              <div class="jump-card-body">
+                <h3 class="jump-card-title">Log Stream Explorer</h3>
+                <p class="jump-card-desc">Interactive high-throughput telemetry table. Search text, filter by namespace, container, or severity level in full screen.</p>
+              </div>
+              <div class="jump-card-footer">
+                <button class="btn btn-jump" type="button">
+                  <span>Open Full-Screen Logs</span>
+                  <svg class="icon jump-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="quick-jump-card glass" data-jump="findings">
+              <div class="jump-card-top">
+                <div class="jump-icon-wrap emerald">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                  </svg>
+                </div>
+                <span class="jump-card-tag">ROOT CAUSE</span>
+              </div>
+              <div class="jump-card-body">
+                <h3 class="jump-card-title">Deterministic Signature Findings</h3>
+                <p class="jump-card-desc">Automated pattern matching across ingested logs, OOM kills, kernel panics, and deterministic rule diagnoses.</p>
+              </div>
+              <div class="jump-card-footer">
+                <button class="btn btn-jump" type="button">
+                  <span>Inspect Root Causes</span>
+                  <svg class="icon jump-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="quick-jump-card glass" data-jump="k8s">
+              <div class="jump-card-top">
+                <div class="jump-icon-wrap cyan">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                    <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                    <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                    <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                  </svg>
+                </div>
+                <span class="jump-card-tag">KUBERNETES</span>
+              </div>
+              <div class="jump-card-body">
+                <h3 class="jump-card-title">Cluster State &amp; Resources</h3>
+                <p class="jump-card-desc">Audit pod CrashLoopBackOff states, persistent volume claim bounds, evicted nodes, and warnings.</p>
+              </div>
+              <div class="jump-card-footer">
+                <button class="btn btn-jump" type="button">
+                  <span>Inspect K8s State</span>
+                  <svg class="icon jump-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="quick-jump-card glass" data-jump="anomalies">
+              <div class="jump-card-top">
+                <div class="jump-icon-wrap amber">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                  </svg>
+                </div>
+                <span class="jump-card-tag">INCIDENTS</span>
+              </div>
+              <div class="jump-card-body">
+                <h3 class="jump-card-title">Spike &amp; Anomaly Correlator</h3>
+                <p class="jump-card-desc">Statistical time-series surge detection flagging 1-minute windows exceeding 3.0σ above volume baseline.</p>
+              </div>
+              <div class="jump-card-footer">
+                <button class="btn btn-jump" type="button">
+                  <span>Analyze Spikes</span>
+                  <svg class="icon jump-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="quick-jump-card glass" data-jump="namespaces">
+              <div class="jump-card-top">
+                <div class="jump-icon-wrap purple">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                  </svg>
+                </div>
+                <span class="jump-card-tag">TOPOLOGY</span>
+              </div>
+              <div class="jump-card-body">
+                <h3 class="jump-card-title">Service &amp; Namespace Map</h3>
+                <p class="jump-card-desc">Visual architecture mapping containers, endpoints, platform middleware, and host services.</p>
+              </div>
+              <div class="jump-card-footer">
+                <button class="btn btn-jump" type="button">
+                  <span>View Topology</span>
+                  <svg class="icon jump-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="quick-jump-card glass" data-jump="timeline">
+              <div class="jump-card-top">
+                <div class="jump-icon-wrap cyan">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                  </svg>
+                </div>
+                <span class="jump-card-tag">OBSERVATION WINDOW</span>
+              </div>
+              <div class="jump-card-body">
+                <h3 class="jump-card-title">Timeline &amp; Global Filters</h3>
+                <p class="jump-card-desc">Configure UTC observation windows, explore event distribution across hours, and analyze spike heatmaps.</p>
+              </div>
+              <div class="jump-card-footer">
+                <button class="btn btn-jump" type="button">
+                  <span>Configure Time Window</span>
+                  <svg class="icon jump-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="quick-jump-card glass" data-jump="ai">
+              <div class="jump-card-top">
+                <div class="jump-icon-wrap emerald">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                </div>
+                <span class="jump-card-tag">AI COPILOT</span>
+              </div>
+              <div class="jump-card-body">
+                <h3 class="jump-card-title">AI Diagnostic Copilot</h3>
+                <p class="jump-card-desc">Local Ollama model (qwen2.5:3b) contextualized with live DuckDB telemetry, incident signatures, and remediation guides.</p>
+              </div>
+              <div class="jump-card-footer">
+                <button class="btn btn-jump" type="button">
+                  <span>Open AI Copilot</span>
+                  <svg class="icon jump-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- View 1: Findings & Root Cause Analysis -->
+      <section class="tab-view" id="viewFindings">
+        <div class="fullscreen-view-nav">
+          <button class="btn btn-back-overview" data-jump="overview" type="button">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>Back to Overview</span>
+          </button>
+          <div class="view-breadcrumb">
+            <span class="bc-root" data-jump="overview">Overview</span>
+            <span class="bc-sep">/</span>
+            <span class="bc-current">Deterministic Signature Findings</span>
+          </div>
+        </div>
+
+        <div class="view-header findings-view-header">
+          <div class="view-title-wrap">
+            <h2>Deterministic Signature Findings</h2>
+            <span class="findings-count-badge" id="findingsCountBadge">Rule-Matched Insights</span>
+          </div>
+          <p class="view-subtitle">Rule-driven deterministic detection across all ingested logs, Kubernetes events, and kernel messages.</p>
+        </div>
+        <div class="findings-list" id="findingsList">
+          <div class="loading-state">Analyzing bundle findings...</div>
+        </div>
+      </section>
+
+      <!-- View 2: Log Stream Explorer -->
+      <section class="tab-view" id="viewLogs">
+        <div class="fullscreen-view-nav">
+          <button class="btn btn-back-overview" data-jump="overview" type="button">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>Back to Overview</span>
+          </button>
+          <div class="view-breadcrumb">
+            <span class="bc-root" data-jump="overview">Overview</span>
+            <span class="bc-sep">/</span>
+            <span class="bc-current">Log Stream Explorer</span>
+          </div>
+        </div>
+
+        <div class="log-controls">
+          <div class="search-box">
+            <svg class="icon search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="inputSearch" placeholder="Search message text, pod name, container, or error string...">
+            <kbd class="search-kbd-hint">/</kbd>
+          </div>
+
+          <div class="select-group">
+            <label for="selectOrigin">Log Scope:</label>
+            <select id="selectOrigin">
+              <option value="all">All Scopes (Cluster & Host)</option>
+              <option value="cluster">Cluster Logs Only</option>
+              <option value="host">Host Snapshot Only</option>
+            </select>
+          </div>
+
+          <div class="select-group">
+            <label for="selectNamespace">Namespace:</label>
+            <select id="selectNamespace">
+              <option value="all">All Namespaces</option>
+            </select>
+          </div>
+
+          <div class="select-group">
+            <label for="selectLevel">Level:</label>
+            <select id="selectLevel">
+              <option value="all">All Levels</option>
+              <option value="FATAL">FATAL</option>
+              <option value="ERROR">ERROR</option>
+              <option value="WARN">WARN</option>
+              <option value="INFO">INFO</option>
+              <option value="DEBUG">DEBUG</option>
+            </select>
+          </div>
+
+          <div class="select-group">
+            <label for="selectIssueType">Issue Bucket:</label>
+            <select id="selectIssueType">
+              <option value="all">All Issues</option>
+              <option value="OOM Killed">OOM Killed</option>
+              <option value="Connection Refused">Connection Refused</option>
+              <option value="Certificate Expired">Certificate Expired</option>
+              <option value="Panic/Crash">Panic / Crash</option>
+              <option value="Timeout">Timeout</option>
+              <option value="Disk Full">Disk Full</option>
+            </select>
+          </div>
+
+          <div class="pagination-info">
+            <span id="logCountDisplay">Showing 0 events</span>
+            <div class="btn-group">
+              <button class="btn btn-sm btn-outline" id="btnPrevPage" disabled>Prev</button>
+              <button class="btn btn-sm btn-outline" id="btnNextPage">Next</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="unparsedNsAlert" class="filter-zero-alert" style="display:none;margin-bottom:12px;background:rgba(59,130,246,0.12);border-color:rgba(59,130,246,0.35);">
+          <svg class="icon alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0;">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <span id="unparsedNsAlertText">Namespace has not been ingested into the session yet.</span>
+          <button class="btn btn-sm btn-accent" id="btnQuickIngestCurrentNs" style="margin-left:auto;">Parse this Namespace Now</button>
+        </div>
+
+        <div class="log-table-container">
+          <table class="log-table" id="logTable">
+            <thead>
+              <tr>
+                <th style="width: 175px;">Timestamp (UTC)</th>
+                <th style="width: 120px;">Scope / Origin</th>
+                <th style="width: 80px;">Level</th>
+                <th style="width: 120px;">Namespace</th>
+                <th style="width: 165px;">Pod / Node / Daemon</th>
+                <th style="width: 130px;">Issue Type</th>
+                <th>Message Content</th>
+              </tr>
+            </thead>
+            <tbody id="logTableBody">
+              <tr><td colspan="7" class="table-empty">Loading log stream...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- View 3: Kubernetes State -->
+      <section class="tab-view" id="viewK8s">
+        <div class="fullscreen-view-nav">
+          <button class="btn btn-back-overview" data-jump="overview" type="button">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>Back to Overview</span>
+          </button>
+          <div class="view-breadcrumb">
+            <span class="bc-root" data-jump="overview">Overview</span>
+            <span class="bc-sep">/</span>
+            <span class="bc-current">Kubernetes Cluster State</span>
+          </div>
+        </div>
+
+        <div class="view-header">
+          <h2>Kubernetes Pod Terminations & Cluster Events</h2>
+          <p class="view-subtitle">Extracted from Kubernetes manifests, pod statuses, exit codes, and Warning events.</p>
+        </div>
+        <div class="k8s-table-container">
+          <table class="log-table" id="k8sTable">
+            <thead>
+              <tr>
+                <th style="width: 180px;">Timestamp</th>
+                <th style="width: 110px;">Kind</th>
+                <th style="width: 140px;">Namespace</th>
+                <th style="width: 220px;">Resource Name</th>
+                <th style="width: 140px;">Reason / Code</th>
+                <th>Detail & Termination Message</th>
+              </tr>
+            </thead>
+            <tbody id="k8sTableBody">
+              <tr><td colspan="6" class="table-empty">No Kubernetes state events found.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- View 4: Anomalies & Correlator -->
+      <section class="tab-view" id="viewAnomalies">
+        <div class="fullscreen-view-nav">
+          <button class="btn btn-back-overview" data-jump="overview" type="button">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>Back to Overview</span>
+          </button>
+          <div class="view-breadcrumb">
+            <span class="bc-root" data-jump="overview">Overview</span>
+            <span class="bc-sep">/</span>
+            <span class="bc-current">Spike &amp; Anomaly Correlator</span>
+          </div>
+        </div>
+
+        <div class="view-header">
+          <h2>Time-Series Surge & Cascading Spike Detector</h2>
+          <p class="view-subtitle">Statistical deviation analysis flagging 1-minute windows exceeding 3.0σ above volume baseline.</p>
+        </div>
+        <div class="anomalies-list" id="anomaliesList">
+          <div class="loading-state">Analyzing time series...</div>
+        </div>
+      </section>
+
+      <!-- View 5: Topology Breakdown -->
+      <section class="tab-view" id="viewNamespaces">
+        <div class="fullscreen-view-nav">
+          <button class="btn btn-back-overview" data-jump="overview" type="button">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>Back to Overview</span>
+          </button>
+          <div class="view-breadcrumb">
+            <span class="bc-root" data-jump="overview">Overview</span>
+            <span class="bc-sep">/</span>
+            <span class="bc-current">Platform Service Topology</span>
+          </div>
+        </div>
+
+        <div class="view-header">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+            <div>
+              <h2>Platform Service Topology & Namespace Distribution</h2>
+              <p class="view-subtitle">Categorized view of cluster microservices, platform middleware, and host services.</p>
+            </div>
+            <div id="topologyIngestNotice" class="badge-ingest-status"></div>
+          </div>
+        </div>
+        <div class="topology-grid" id="topologyGrid">
+          <!-- Dynamically populated category groups & namespace cards -->
+        </div>
+      </section>
+
+      <!-- View 6: Dedicated AI Copilot Diagnostic Hub -->
+      <section class="tab-view" id="viewAi">
+        <div class="fullscreen-view-nav">
+          <button class="btn btn-back-overview" data-jump="overview" type="button">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>Back to Overview</span>
+          </button>
+          <div class="view-breadcrumb">
+            <span class="bc-root" data-jump="overview">Overview</span>
+            <span class="bc-sep">/</span>
+            <span class="bc-current">AI Diagnostic Copilot</span>
+          </div>
+        </div>
+
+        <div class="view-header">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+            <div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <h2>Local AI Diagnostic Copilot</h2>
+                <span class="badge airgap-badge" id="aiHeaderModelBadge">qwen2.5:3b</span>
+              </div>
+              <p class="view-subtitle">Air-Gapped offline LLM intelligence grounded directly in active DuckDB logs and Kubernetes cluster anomalies.</p>
+            </div>
+            <button class="btn btn-ai-sparkle" id="btnLaunchAiDrawerFromTab" type="button" style="padding: 9px 18px; font-size: 13px;">
+              <span>Open Slide-Over Copilot Chat</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- AI Status & Diagnostic Playbooks -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-top: 16px;">
+          <!-- Model Health Card -->
+          <div class="quick-jump-card glass" style="cursor: default;">
+            <div class="jump-card-top">
+              <div class="jump-icon-wrap emerald">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                  <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                  <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                  <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                </svg>
+              </div>
+              <span class="jump-card-tag" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);">MODEL READY</span>
+            </div>
+            <div class="jump-card-body">
+              <h3 class="jump-card-title">Ollama Engine Status</h3>
+              <p class="jump-card-desc">Operating in air-gapped mode with <code id="aiCardModelCode">qwen2.5:3b</code>. Zero telemetry or data leaves this machine. 4,096 token dynamic context window.</p>
+            </div>
+            <div class="jump-card-footer" style="padding-top: 12px; border-top: 1px solid var(--border-subtle); display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-dim);">
+              <span>Context: DuckDB Telemetry</span>
+              <span style="color: #34d399; font-weight: 600;">Stream Ready</span>
+            </div>
+          </div>
+
+          <!-- Diagnostic Playbook 1 -->
+          <div class="quick-jump-card glass ai-prompt-card" data-prompt="Summarize the top critical errors and root causes across all pods and services in this bundle.">
+            <div class="jump-card-top">
+              <div class="jump-icon-wrap emerald">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+              </div>
+              <span class="jump-card-tag">AUTO TRIAGE</span>
+            </div>
+            <div class="jump-card-body">
+              <h3 class="jump-card-title">Root Cause Triage</h3>
+              <p class="jump-card-desc">Ask the AI Copilot to correlate OOM events, kernel panics, and signature rule hits into an executive diagnostic report.</p>
+            </div>
+            <div class="jump-card-footer">
+              <button class="btn btn-jump" type="button">
+                <span>Run Triage Query</span>
+                <svg class="icon jump-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Diagnostic Playbook 2 -->
+          <div class="quick-jump-card glass ai-prompt-card" data-prompt="Why did pods enter CrashLoopBackOff or get OOMKilled in this support bundle? Detail exact timestamps and memory limits.">
+            <div class="jump-card-top">
+              <div class="jump-icon-wrap amber">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                </svg>
+              </div>
+              <span class="jump-card-tag">CRASH INVESTIGATION</span>
+            </div>
+            <div class="jump-card-body">
+              <h3 class="jump-card-title">CrashLoopBackOff &amp; OOM</h3>
+              <p class="jump-card-desc">Inspect exact memory limit violations, exit codes 137, and cascading restart loops across services.</p>
+            </div>
+            <div class="jump-card-footer">
+              <button class="btn btn-jump" type="button">
+                <span>Analyze Crashes</span>
+                <svg class="icon jump-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Diagnostic Playbook 3 -->
+          <div class="quick-jump-card glass ai-prompt-card" data-prompt="Audit storage volume mounting failures, PVC bound errors, or CSI timeout issues and provide remediation CLI steps.">
+            <div class="jump-card-top">
+              <div class="jump-icon-wrap cyan">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                  <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                </svg>
+              </div>
+              <span class="jump-card-tag">STORAGE &amp; CSI</span>
+            </div>
+            <div class="jump-card-body">
+              <h3 class="jump-card-title">Storage &amp; PVC Failure Audit</h3>
+              <p class="jump-card-desc">Identify unmounted Ceph/NFS PVCs, CSI driver timeouts, and host volume lock contention.</p>
+            </div>
+            <div class="jump-card-footer">
+              <button class="btn btn-jump" type="button">
+                <span>Audit Storage</span>
+                <svg class="icon jump-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- View 7: Hierarchical Multi-Agent Triage (H-MAT) -->
+      <section class="tab-view" id="viewAgentic">
+        <div class="fullscreen-view-nav">
+          <button class="btn btn-back-overview" data-jump="overview" type="button">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>Back to Overview</span>
+          </button>
+          <div class="view-breadcrumb">
+            <span class="bc-root" data-jump="overview">Overview</span>
+            <span class="bc-sep">/</span>
+            <span class="bc-current">Hierarchical Multi-Agent Triage</span>
+          </div>
+        </div>
+
+        <!-- Agentic Hero Banner -->
+        <div class="agentic-hero">
+          <div class="agentic-hero-header">
+            <div class="agentic-title-group">
+              <h2>
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #01A982;">
+                  <circle cx="12" cy="5" r="3"></circle>
+                  <circle cx="6" cy="18" r="3"></circle>
+                  <circle cx="18" cy="18" r="3"></circle>
+                  <path d="M12 8v4M9 15l-1.5 1.5M15 15l1.5 1.5"></path>
+                </svg>
+                Hierarchical Multi-Agent Triage (H-MAT)
+                <span class="badge airgap-badge" id="agenticModelBadge">qwen2.5:3b</span>
+              </h2>
+              <p>Autonomous swarm of specialized agents: Two domain leads (Cluster & Host) and dynamic sub-agents per Kubernetes namespace to pinpoint Patient Zero and causal failure chains.</p>
+            </div>
+            <div class="agentic-controls">
+              <button class="btn btn-primary" id="btnTriggerAgenticTriage" type="button" style="padding: 10px 20px; font-weight: 600;">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:6px;">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+                <span id="btnTriggerAgenticTriageText">Run Multi-Agent Triage</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="agentic-progress-bar" id="agenticProgressBar" style="display: none;">
+            <div class="agentic-progress-fill" id="agenticProgressFill"></div>
+          </div>
+          <div class="agentic-progress-status" id="agenticProgressStatus" style="display: none;">
+            <span id="agenticCurrentStep">Initializing multi-agent discovery...</span>
+            <span id="agenticCompletedCount">0/0 agents</span>
+          </div>
+        </div>
+
+        <!-- Patient Zero Spotlight Banner (Dynamic) -->
+        <div class="patient-zero-card" id="agenticPatientZeroCard" style="display: none;">
+          <div class="pz-header">
+            <span class="pz-tag critical" id="pzBadge">PATIENT ZERO CANDIDATE</span>
+            <span class="pz-time" id="pzTimestamp">--:--:--</span>
+          </div>
+          <h3 class="pz-title" id="pzComponent">Investigating...</h3>
+          <p class="pz-desc" id="pzSummary">Analyzing log streams across cluster and host domains...</p>
+        </div>
+
+        <!-- Causal Cascade Timeline Waterfall (Dynamic) -->
+        <div class="cascade-chain-container" id="agenticCascadeContainer" style="display: none;">
+          <div class="cascade-chain-title">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #38bdf8;">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+            Chronological Causal Cascade Sequence
+          </div>
+          <div class="cascade-timeline-list" id="agenticCascadeList">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+
+        <!-- Remediation Playbook Runbook -->
+        <div class="cascade-chain-container" id="agenticRunbookContainer" style="display: none;">
+          <div class="cascade-chain-title" style="justify-content: space-between;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #34d399;">
+                <polyline points="4 17 10 11 4 5"></polyline>
+                <line x1="12" y1="19" x2="20" y2="19"></line>
+              </svg>
+              <span>Actionable SRE Remediation Playbook</span>
+            </div>
+            <button class="btn btn-secondary btn-copy-runbook" id="btnCopyAgenticPlaybook" type="button">Copy Playbook</button>
+          </div>
+          <div class="remediation-box" id="agenticRunbookContent">
+            # Runbook will generate when triage completes.
+          </div>
+        </div>
+
+        <!-- Hierarchy Grid 1: Commander & Domain Leads -->
+        <div class="agent-level-title">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+          </svg>
+          Level 3 & 2: Commander & Domain Leads
+        </div>
+        <div class="agent-grid" id="agenticDomainGrid">
+          <div class="agent-card glass" id="agentCardCommander">
+            <div class="agent-card-header">
+              <span class="agent-card-title">Incident Commander</span>
+              <span class="agent-status-badge idle" id="badgeCommander">IDLE</span>
+            </div>
+            <div class="agent-card-body" id="descCommander">
+              Synthesizes overall cross-domain causal graphs and pinpoints Patient Zero.
+            </div>
+            <div class="agent-card-footer">
+              <span>Role: Global Synthesizer</span>
+              <span id="durCommander">-- ms</span>
+            </div>
+          </div>
+
+          <div class="agent-card glass" id="agentCardClusterLead">
+            <div class="agent-card-header">
+              <span class="agent-card-title">Cluster Domain Lead</span>
+              <span class="agent-status-badge idle" id="badgeClusterLead">IDLE</span>
+            </div>
+            <div class="agent-card-body" id="descClusterLead">
+              Supervises all Kubernetes namespace specialists and correlates inter-service cascading crashes.
+            </div>
+            <div class="agent-card-footer">
+              <span>Target: K8s Cluster</span>
+              <span id="durClusterLead">-- ms</span>
+            </div>
+          </div>
+
+          <div class="agent-card glass" id="agentCardHostLead">
+            <div class="agent-card-header">
+              <span class="agent-card-title">Host & Storage Lead</span>
+              <span class="agent-status-badge idle" id="badgeHostLead">IDLE</span>
+            </div>
+            <div class="agent-card-body" id="descHostLead">
+              Supervises OS journald, disk pressure, CSI storage drivers, and Fluent-Bit ingestion log pipelines.
+            </div>
+            <div class="agent-card-footer">
+              <span>Target: Node Snapshot</span>
+              <span id="durHostLead">-- ms</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hierarchy Grid 2: Dynamic Sub-Agents -->
+        <div class="agent-level-title">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+          Level 1: Dynamically Spawned Namespace & Host Sub-Agents
+        </div>
+        <div class="agent-grid" id="agenticSubAgentsGrid">
+          <div class="loading-state" id="agenticSubAgentsPlaceholder">
+            Click "Run Multi-Agent Triage" to discover and deploy agents for all active namespaces.
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Modal 1: Switch Session Modal -->
+    <div class="modal-overlay" id="modalSwitchSession">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Analyzed Support Bundle Sessions</h3>
+          <button class="modal-close" id="btnCloseSwitchModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-desc">Select any previously analyzed bundle to instantly switch the dashboard context without re-parsing.</p>
+          <div class="session-list" id="sessionList">
+            <div class="loading-state">Fetching saved sessions...</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="btnCancelSwitchModal">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal 2: Upload / Ingest New Bundle Modal -->
+    <div class="modal-overlay" id="modalUploadBundle">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Ingest Support Bundle</h3>
+          <button class="modal-close" id="btnCloseUploadModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="upload-tabs">
+            <button class="upload-tab-btn active" id="tabUploadBrowser">Browser Upload (up to ~4 GB)</button>
+            <button class="upload-tab-btn" id="tabUploadDropFolder">Drop Folder (Massive / Multi-GB)</button>
+          </div>
+
+          <!-- Browser Upload Panel -->
+          <div class="upload-panel active" id="panelUploadBrowser">
+            <div class="drop-zone" id="dropZone">
+              <svg class="icon drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <p class="drop-prompt">Drag & drop <code>.tar</code>, <code>.tar.gz</code>, or <code>.zip</code> bundle archive here</p>
+              <p class="drop-sub">or click anywhere in this box to browse</p>
+              <button type="button" class="btn btn-primary" id="btnBrowseFiles" style="margin-top: 14px;">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                Select Bundle File
+              </button>
+              <input type="file" id="fileInput" accept=".tar,.tar.gz,.tgz,.zip,.tar.bz2,.tar.xz" style="display:none;">
+            </div>
+            <div class="upload-progress-container" id="uploadProgressContainer" style="display:none;">
+              <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="progressBarFill" style="width: 0%;"></div>
+              </div>
+              <div class="progress-labels">
+                <span id="uploadProgressText">Uploading...</span>
+                <span id="uploadProgressPercent">0%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Drop Folder Panel -->
+          <div class="upload-panel" id="panelUploadDropFolder">
+            <p class="drop-desc">For multi-gigabyte archives (10–30+ GB), copy or link files directly into the local drop folder:</p>
+            <div class="code-box"><code>./bundles/</code></div>
+            <p class="drop-desc" style="margin-top: 10px;">Discovered files available for 1-click analysis:</p>
+            <div class="bundles-list" id="bundlesList">
+              <div class="loading-state">Checking drop folder...</div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="btnCancelUploadModal">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal 3: Bundle Explorer & Priority Queue Modal (Selective Ingestion) -->
+    <div class="modal-overlay" id="modalBundleExplorer">
+      <div class="modal-card modal-xl">
+        <div class="modal-header">
+          <div class="modal-header-text">
+            <div class="modal-header-title-row">
+              <h3>Support Bundle Explorer & Priority Parse Queue</h3>
+              <span class="badge airgap-badge" id="explorerBundleName">Loading Bundle...</span>
+            </div>
+            <p class="modal-subtitle">Choose between Cluster Logs or Host Snapshot logs, inspect service containers dynamically on-the-fly, and decide what parses first.</p>
+          </div>
+          <button class="modal-close" id="btnCloseExplorerModal">&times;</button>
+        </div>
+
+        <!-- Live Queue Progress Bar (visible when parsing is active) -->
+        <div class="queue-progress-bar-container" id="queueProgressBarContainer" style="display: none;">
+          <div class="queue-progress-info">
+            <span id="queueProgressLabel">Parsing unit...</span>
+            <span id="queueProgressPercent">0%</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill progress-fill-animated" id="queueProgressFill" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <div class="modal-body explorer-split">
+          <!-- Left Panel: Hierarchical Log Discovery (Cluster vs Host) -->
+          <div class="explorer-col-left">
+            <!-- Part Tabs: Cluster Logs vs Host Snapshot -->
+            <div class="part-tabs-bar" id="partTabsBar">
+              <!-- Dynamically populated: e.g. [Cluster Logs (42)] [Host Snapshot: node-1 (38)] -->
+            </div>
+
+            <!-- Filter and Selection Toolbar -->
+            <div class="explorer-filter-bar">
+              <div class="search-input-wrapper">
+                <svg class="icon search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="inputExplorerFilter" class="datetime-input" placeholder="Search services, daemons, logs (e.g. vault, syslog, docker)...">
+              </div>
+              <div class="explorer-quick-actions">
+                <button class="btn btn-xs btn-outline" id="btnSelectAllExplorer">Select All</button>
+                <button class="btn btn-xs btn-outline" id="btnClearExplorer">Deselect All</button>
+                <button class="btn btn-xs btn-accent" id="btnAddSelectedToQueue">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                  Add Selected to Queue
+                </button>
+              </div>
+            </div>
+
+            <!-- Units List Container (grouped by category/type) -->
+            <div class="explorer-units-list" id="explorerUnitsList">
+              <div class="loading-state">Loading bundle inventory...</div>
+            </div>
+          </div>
+
+          <!-- Right Panel: Priority Parse Queue & Impact Inspector -->
+          <div class="explorer-col-right">
+            <!-- Section 1: Priority Parse Queue -->
+            <div class="queue-section">
+              <div class="queue-section-header">
+                <div class="queue-header-title">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="13 17 18 12 13 7"></polyline>
+                    <polyline points="6 17 11 12 6 7"></polyline>
+                  </svg>
+                  <h4>Priority Parse Queue</h4>
+                  <span class="badge" id="queueCountBadge">0 queued</span>
+                </div>
+                <div class="queue-header-actions">
+                  <button class="btn btn-xs btn-outline" id="btnClearQueue" title="Clear all pending items">Clear</button>
+                  <button class="btn btn-xs btn-danger" id="btnCancelQueue" title="Cancel currently running parse" style="display:none;">Cancel</button>
+                </div>
+              </div>
+
+              <p class="queue-hint">Items parse sequentially from top to bottom (#1 parses first). Use arrows to rearrange priority.</p>
+
+              <div class="queue-items-container" id="queueItemsContainer">
+                <div class="queue-empty-state">
+                  <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                    <circle cx="4" cy="6" r="1.5"></circle>
+                    <circle cx="4" cy="12" r="1.5"></circle>
+                    <circle cx="4" cy="18" r="1.5"></circle>
+                  </svg>
+                  <p>Queue is empty. Select services or host logs on the left and click <strong>Add to Queue</strong> to define what to parse first.</p>
+                </div>
+              </div>
+
+              <!-- Start Button -->
+              <div class="queue-start-bar">
+                <button class="btn btn-primary btn-block btn-lg" id="btnStartParsingQueue" disabled>
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  </svg>
+                  <span id="btnStartParsingQueueText">Start Parsing in Priority Order</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Section 2: On-the-Fly Service Mapping & Detail Inspector -->
+            <div class="unit-detail-section" id="unitDetailSection">
+              <div class="unit-detail-header">
+                <h5>Unit Inspection & On-the-Fly Mapping</h5>
+              </div>
+              <div class="unit-detail-content" id="unitDetailContent">
+                <p class="unit-detail-placeholder">Hover or click any unit on the left to inspect discovered containers, pods, date span, and upstream/downstream service relationships.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <div class="explorer-footer-stats">
+            <span id="explorerSummaryStats">0 parts &bull; 0 total units</span>
+          </div>
+          <button class="btn btn-secondary" id="btnDoneExplorerModal">Done / Return to Dashboard</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Copilot Backdrop -->
+    <div class="ai-drawer-backdrop" id="aiDrawerBackdrop"></div>
+
+    <!-- AI Copilot Slide-Over Drawer -->
+    <aside class="ai-drawer" id="aiDrawer" aria-label="AI Diagnostic Copilot">
+      <!-- Drawer Header -->
+      <div class="ai-drawer-header">
+        <div class="ai-header-left">
+          <div class="ai-header-icon-wrap">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="ai-title-row" style="display:flex;align-items:center;gap:8px;">
+              <h3 class="ai-title">AI Copilot</h3>
+              <select id="aiModelSelect" class="ai-model-select" title="Active Ollama Model">
+                <option value="qwen2.5:3b">qwen2.5:3b</option>
+                <option value="qwen3.5:0.8b">qwen3.5:0.8b</option>
+              </select>
+            </div>
+            
+          </div>
+        </div>
+        <div class="ai-header-actions">
+          <button class="btn btn-xs btn-outline" id="btnClearAiChat" title="Clear conversation history">Clear</button>
+          <button class="modal-close" id="btnCloseAiDrawer" title="Close AI Copilot">&times;</button>
+        </div>
+      </div>
+
+      <!-- Dynamic Context Banner -->
+      <div class="ai-context-banner">
+        <div class="ai-context-indicator">
+          <span class="ai-pulse-dot"></span>
+          <span>Active Context:</span>
+        </div>
+        <div class="ai-context-details">
+          <strong id="aiActiveSessionName">Loading...</strong>
+        </div>
+      </div>
+
+      <!-- Quick Diagnostic Prompts -->
+      <div class="ai-quick-prompts" id="aiQuickPrompts">
+        <div class="ai-quick-label">Suggested Diagnostic Prompts</div>
+        <div class="ai-chips-scroll">
+          <button type="button" class="ai-chip" data-prompt="Summarize the top critical errors and root causes across all pods and services in this bundle.">
+            <span>Top Errors &amp; Root Causes</span>
+          </button>
+          <button type="button" class="ai-chip" data-prompt="Why did pods enter CrashLoopBackOff or get OOMKilled in this support bundle?">
+            <span>CrashLoopBackOff / OOM</span>
+          </button>
+          <button type="button" class="ai-chip" data-prompt="Audit storage volume mounting failures, PVC bound errors, or CSI timeout issues.">
+            <span>Storage &amp; PVC Failures</span>
+          </button>
+          <button type="button" class="ai-chip" data-prompt="Provide a step-by-step remediation guide for the identified Kubernetes issues.">
+            <span>Step-by-Step Remediation</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Conversation Messages Container -->
+      <div class="ai-messages-container" id="aiMessagesContainer">
+        <div class="ai-message ai-message-assistant" id="aiWelcomeMessage">
+          <div class="ai-msg-avatar">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </div>
+          <div class="ai-msg-content">
+            <div class="ai-msg-header">
+              <strong>AI Copilot</strong>
+              <span class="ai-msg-time">Ready</span>
+            </div>
+            <div class="ai-msg-body">
+              <p>Welcome! I am your <strong>AI  Copilot</strong> running locally via Ollama (<code id="aiWelcomeModelCode">qwen2.5:3b</code>).</p>
+              <p>I have direct contextual access to your support bundle logs, Kubernetes anomaly rules, and DuckDB queries. Ask questions or pick a suggested prompt above!</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input Footer -->
+      <div class="ai-input-container">
+        <form class="ai-chat-form" id="aiChatForm">
+          <div class="ai-input-wrapper">
+            <textarea
+              id="aiChatInput"
+              class="ai-chat-textarea"
+              placeholder="Ask anything about this support bundle (e.g. 'Why is ceph degraded?')..."
+              rows="1"
+            ></textarea>
+            <button type="submit" class="btn btn-primary ai-send-btn" id="btnAiSend" title="Send message">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </div>
+          <div class="ai-input-footer">
+            <span>Press Enter to send &bull; Shift+Enter for new line</span>
+            <span class="ai-token-speed" id="aiTokenSpeed"></span>
+          </div>
+        </form>
+      </div>
+    <!-- Modal: Agent Evidence Drill-Down -->
+    <div class="modal-overlay" id="modalAgenticEvidence">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <div>
+            <h3 id="modalAgentTitle">Agent Evidence Drill-Down</h3>
+            <p class="modal-subtitle" id="modalAgentSubtitle">Telemetry and grounded logs supporting this verdict.</p>
+          </div>
+          <button class="modal-close" id="btnCloseAgenticModal">&times;</button>
+        </div>
+        <div class="modal-body" id="modalAgentBody" style="max-height: 65vh; overflow-y: auto;">
+          <!-- Populated dynamically -->
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="btnDismissAgenticModal">Close</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

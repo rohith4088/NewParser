@@ -1,0 +1,17 @@
+- id: K8S_OOM_KILLED_POD
+  title: Kubernetes Pod Terminated due to OOMKilled
+  severity: CRITICAL
+  category: Core Infrastructure
+  description: One or more containers were terminated by the Linux kernel OOM killer or exceeded memory cgroup limits (exit code 137).
+  remediation: Inspect container memory limits in pod spec (`resources.limits.memory`). Check memory usage trends on the node. Increase limits or investigate memory leaks.
+  target: k8s_facts
+  condition: "reason = 'OOMKilled' OR exit_code = 137"
+
+- id: LOG_OOM_KILLER_INVOKED
+  title: Linux Kernel OOM Killer Invoked
+  severity: CRITICAL
+  category: Core Infrastructure
+  description: The kernel Out-Of-Memory (OOM) killer was triggered on the host node, terminating active processes to free memory pages.
+  remediation: Check host dmesg/journalctl for memory exhaustion. Verify host RAM sizing and swap allocation. Identify the memory-hungry processes.
+  target: events
+  condition: "issue_type = 'OOM Killed' OR message ILIKE '%oom-killer%' OR message ILIKE '%Out of memory: Kill process%'"

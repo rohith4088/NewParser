@@ -1,0 +1,8 @@
+- id: POD_CRASH_LOOP_BACKOFF
+  title: Kubernetes Pod In CrashLoopBackOff State
+  severity: HIGH
+  category: Core Infrastructure
+  description: One or more containers are crashing repeatedly upon startup (restarts >= 3), triggering exponential backoff delays.
+  remediation: Check previous container crash logs (`kubectl logs -p <pod> -c <container>`). Inspect entrypoint script, config maps, secrets, and environment dependencies.
+  target: k8s_facts
+  condition: "reason = 'CrashLoopBackOff' OR restarts >= 3"

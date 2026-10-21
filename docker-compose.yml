@@ -1,0 +1,31 @@
+services:
+  analyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: onprem-analyzer:latest
+    container_name: onprem-analyzer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persistent DuckDB session storage
+      - ./data:/app/data
+      # Drop folder for multi-gigabyte (10-30+ GB) support bundle tarballs
+      - ./bundles:/app/bundles
+      # Live rule overrides
+      - ./rules:/app/rules:ro
+      # Live analyzer package & static UI sync
+      - ./analyzer:/app/analyzer:ro
+    environment:
+      - ANALYZER_HOST=0.0.0.0
+      - ANALYZER_PORT=8080
+      - ANALYZER_DATA_DIR=/app/data
+      - ANALYZER_BUNDLES_DIR=/app/bundles
+      - ANALYZER_RULES_DIR=/app/rules
+      - ANALYZER_TOPOLOGY_PATH=/app/topology/services.yaml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3

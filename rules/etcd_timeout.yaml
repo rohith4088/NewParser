@@ -1,0 +1,8 @@
+- id: ETCD_OR_K8S_TIMEOUT
+  title: Kubernetes Control Plane / etcd Request Timeout
+  severity: HIGH
+  category: Core Infrastructure
+  description: Operations against the Kubernetes API or etcd backend exceeded their context deadlines, causing API stalls and leader elections.
+  remediation: Check disk fsync latency on etcd nodes. Ensure disk write latency is under 10ms. Verify network latency between master nodes.
+  target: events
+  condition: "(issue_type = 'Timeout' OR message ILIKE '%context deadline exceeded%') AND (namespace = 'kube-system' OR message ILIKE '%etcd%' OR message ILIKE '%apiserver%')"
