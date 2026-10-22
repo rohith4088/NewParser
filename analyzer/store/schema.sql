@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS k8s_facts (
     reason VARCHAR,
     exit_code INTEGER,
     restarts INTEGER,
-    detail VARCHAR
+    detail VARCHAR,
+    occurrences INTEGER DEFAULT 1
 );
 
 CREATE INDEX IF NOT EXISTS idx_k8s_facts_reason ON k8s_facts(reason);

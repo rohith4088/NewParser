@@ -11,9 +11,10 @@ try:
 except ImportError:
     _HAS_ORJSON = False
 
+from .cri import split_cri
 from .event import Event, detect_issue_type, detect_level
 from .stitch import LogStitcher, RawLogLine
-from .timestamps import micros_to_iso, parse_iso_micros
+from .timestamps import micros_to_iso, parse_any_ts
 
 
 def _loads(data: bytes | str) -> dict | None:
@@ -30,6 +31,13 @@ def _loads(data: bytes | str) -> dict | None:
         return None
 
 
+# Timestamp keys in priority order. Fluent Bit writes "date" (ISO string or a
+# float epoch depending on json_date_format); other pipelines use the rest.
+_TS_KEYS = ("date", "@timestamp", "time", "timestamp", "ts")
+
+StreamKey = tuple[str, str, str]  # (namespace, pod, container)
+
+
 def parse_fluent_stream(
     stream: BinaryIO,
     filename: str,
@@ -38,11 +46,42 @@ def parse_fluent_stream(
     default_pod: str = "",
     default_container: str = "",
 ) -> Iterator[Event]:
-    """Parse a Fluent-Bit JSON log file line-by-line."""
-    line_num = 0
-    stitcher = LogStitcher()
+    """Parse a Fluent-Bit JSON log file line-by-line.
 
-    # Read line-by-line
+    Multi-line stack traces and runtime-split partial chunks arrive as
+    separate JSON records. They are rejoined with one :class:`LogStitcher`
+    per container stream (namespace/pod/container) so records from different
+    containers in the same file are never merged. The metadata (timestamp,
+    node, explicit level) of the first record of each stitched event is used.
+    """
+    line_num = 0
+    stitchers: dict[StreamKey, LogStitcher] = {}
+    # Per stream: physical line number -> metadata of that record.
+    pending: dict[StreamKey, dict[int, dict]] = {}
+
+    def _emit(key: StreamKey, stitched) -> Event:
+        meta_by_line = pending[key]
+        meta = meta_by_line.pop(stitched.start_line, None) or {}
+        # Records swallowed into earlier events can no longer start one.
+        for stale in [k for k in meta_by_line if k < stitched.start_line]:
+            del meta_by_line[stale]
+        msg = stitched.message.strip()
+        level = detect_level(msg, meta.get("explicit_level", ""))
+        return Event(
+            ts_micros=meta.get("ts_micros"),
+            ts_iso=meta.get("ts_iso", ""),
+            source="fluent",
+            node=meta.get("node", default_node or "node"),
+            namespace=key[0],
+            pod=key[1],
+            container=key[2],
+            level=level,
+            issue_type=detect_issue_type(msg, level),
+            message=msg,
+            file=filename,
+            line_num=stitched.start_line,
+        )
+
     for raw_line in stream:
         line_num += 1
         raw_line_stripped = raw_line.strip()
@@ -57,15 +96,33 @@ def parse_fluent_stream(
         msg = data.get("message")
         if msg is None:
             msg = data.get("log") or data.get("msg") or ""
-        msg = str(msg).strip()
+        msg = str(msg)
 
-        # Check for partial flag (Fluent Bit 'P')
-        is_partial = data.get("logtag") == "P"
+        # Partial flag: Fluent Bit docker parser uses "logtag", CRI parser "_p"
+        is_partial = data.get("logtag") == "P" or data.get("_p") == "P"
 
-        stitched = stitcher.push(RawLogLine(line_num=line_num, text=msg, is_partial=is_partial))
-        if stitched is not None:
-            # Yield previous completed stitched event
-            pass  # Fluent JSON usually has per-line metadata, we yield below
+        # Timestamp
+        ts_micros = None
+        raw_ts = None
+        for ts_key in _TS_KEYS:
+            if data.get(ts_key) not in (None, ""):
+                raw_ts = data[ts_key]
+                ts_micros = parse_any_ts(raw_ts)
+                if ts_micros is not None:
+                    break
+
+        # Unparsed CRI record forwarded verbatim in the "log" field
+        cri = split_cri(msg.rstrip("\r\n"))
+        if cri is not None:
+            msg = cri.message
+            is_partial = is_partial or cri.is_partial
+            if ts_micros is None:
+                ts_micros = cri.ts_micros
+
+        # Partial chunks must keep boundary whitespace. Full lines keep their
+        # leading indentation ("\tat com.Foo(...)") because the stitcher uses
+        # it to recognise stack frames; the stitched message is trimmed later.
+        msg = msg.rstrip("\r\n") if is_partial else msg.rstrip()
 
         # Extract metadata
         k8s = data.get("kubernetes") if isinstance(data.get("kubernetes"), dict) else {}
@@ -77,29 +134,26 @@ def parse_fluent_stream(
             or default_container
             or "container"
         )
-        node = data.get("host") or default_node or "node"
+        node = data.get("host") or k8s.get("host") or default_node or "node"
 
-        # Timestamp
-        date_str = data.get("date") or data.get("@timestamp") or ""
-        ts_micros = parse_iso_micros(date_str) if date_str else None
-        ts_iso = micros_to_iso(ts_micros) if ts_micros else date_str
+        key = (ns, pod, container)
+        stitcher = stitchers.get(key)
+        if stitcher is None:
+            stitcher = stitchers[key] = LogStitcher()
+            pending[key] = {}
+        pending[key][line_num] = {
+            "ts_micros": ts_micros,
+            "ts_iso": micros_to_iso(ts_micros) if ts_micros else ("" if raw_ts is None else str(raw_ts)),
+            "node": node,
+            "explicit_level": str(data.get("level") or data.get("severity") or ""),
+        }
 
-        # Level & Issue detection
-        explicit_level = str(data.get("level") or data.get("severity") or "")
-        level = detect_level(msg, explicit_level)
-        issue_type = detect_issue_type(msg, level)
+        stitched = stitcher.push(RawLogLine(line_num=line_num, text=msg, is_partial=is_partial))
+        if stitched is not None:
+            yield _emit(key, stitched)
 
-        yield Event(
-            ts_micros=ts_micros,
-            ts_iso=ts_iso,
-            source="fluent",
-            node=node,
-            namespace=ns,
-            pod=pod,
-            container=container,
-            level=level,
-            issue_type=issue_type,
-            message=msg,
-            file=filename,
-            line_num=line_num,
-        )
+    # Flush every stream at EOF
+    for key, stitcher in stitchers.items():
+        flushed = stitcher.flush()
+        if flushed is not None:
+            yield _emit(key, flushed)

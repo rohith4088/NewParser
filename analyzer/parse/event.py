@@ -12,7 +12,25 @@ _CONN_REFUSED_RE = re.compile(r"(?i)(connection.*refused|dial tcp.*connect: conn
 _PANIC_RE = re.compile(r"(?i)(panic:|fatal error: panic|segmentation fault|segfault)")
 _DISK_FULL_RE = re.compile(r"(?i)(no space left on device|disk full|disk quota exceeded)")
 _CERT_RE = re.compile(r"(?i)(certificate has expired|x509: certificate|cert.*expired)")
-_FAIL_RE = re.compile(r"(?i)(error|exception|fail|fatal|critical)")
+_FAIL_RE = re.compile(r"(?i)\b(errors?|exceptions?|fail(?:ed|ure|ures|s)?|fatal|critical)\b")
+# CamelCase exception/error types, e.g. NullPointerException, KeyError
+_FAIL_TYPE_RE = re.compile(r"[a-z](?:Exception|Error)\b")
+
+# Phrases that contain an error word but report the ABSENCE of a problem.
+# They are blanked out before heuristic level/issue detection so that lines
+# like "sync done, errors=0" or "err=<nil>" are not counted as errors.
+_BENIGN_RE = re.compile(
+    r"(?i)"
+    r"\b(?:errors?|err|failures?|failed|fails|exceptions?|warnings?)\s*[=:]\s*(?:0|none|nil|<nil>|null|false|\"\"|''|\[\]|\{\})(?![\w.])"
+    r"|\"(?:error|err|exception|failure)\"\s*:\s*(?:null|false|\"\"|0|\[\]|\{\})"
+    r"|\b(?:no|zero|0|without(?: any)?)\s+(?:errors?|failures?|exceptions?|faults?)\b"
+    r"|\b(?:errors?|failures?)\s+(?:count|total)\s*[=:]?\s*0\b"
+    r"|\berror[-_ ]?free\b"
+)
+
+
+def _scrub_benign(text: str) -> str:
+    return _BENIGN_RE.sub(" ", text)
 
 
 def detect_level(text: str, explicit_level: str = "") -> str:
@@ -35,7 +53,7 @@ def detect_level(text: str, explicit_level: str = "") -> str:
     if _OOM_RE.search(text):
         return "FATAL"
 
-    upper = text[:200].upper()
+    upper = _scrub_benign(text[:200]).upper()
     if re.search(r"\b(FATAL|CRITICAL|PANIC)\b", upper):
         return "FATAL"
     if re.search(r"\b(ERROR|ERR|EXCEPTION)\b", upper):
@@ -64,7 +82,10 @@ def detect_issue_type(message: str, level: str = "INFO") -> str:
         return "Timeout"
     if _DISK_FULL_RE.search(message):
         return "Disk Full"
-    if level in ("ERROR", "FATAL") or _FAIL_RE.search(message):
+    if level in ("ERROR", "FATAL"):
+        return "General Error"
+    scrubbed = _scrub_benign(message)
+    if _FAIL_RE.search(scrubbed) or _FAIL_TYPE_RE.search(scrubbed):
         return "General Error"
     if level == "WARN":
         return "Warning"

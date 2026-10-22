@@ -22,7 +22,10 @@ _JAVA_AT_FRAME = re.compile(r"^\s+at\s+[\w$./]+\([^)]+\)")
 _GO_PANIC = re.compile(r"^(panic:\s+|fatal error:\s+)")
 _GO_GOROUTINE = re.compile(r"^goroutine \d+ \[[^\]]+\]:")
 _GO_FRAME = re.compile(r"^\t[/\w.-]+\.go:\d+")
-_INDENTED = re.compile(r"^\s{2,}\S+")
+# Go panic function lines, e.g. "main.(*Server).Run(0xc000123)" or
+# "created by net/http.(*Server).Serve in goroutine 1"
+_GO_FUNC_LINE = re.compile(r"^(?:created by \S+|\[signal .+\]|[\w./*()\[\]-]+\(.*\)(?: \+0x[0-9a-f]+)?)")
+_INDENTED = re.compile(r"^(?:\s{2,}|\t)\S+")
 
 _NEW_LOG_RE = re.compile(
     r"^("
@@ -73,32 +76,39 @@ class LogStitcher:
         self.max_buffer_lines = max_buffer_lines
         self._current_start_line = 0
         self._lines: list[str] = []
-        self._in_traceback = False
+        # None, "python", "go" or "java": decides which lines may extend the
+        # current stack trace (see _push_physical_line).
+        self._in_traceback: str | None = None
         self._was_partial = False
 
     def push(self, line: RawLogLine) -> StitchedEvent | None:
         """Feed one line. Returns a StitchedEvent if an event just completed."""
         raw_text = line.text.rstrip("\r\n")
 
-        # 1. Fluent Bit partial line handling
-        if self._was_partial:
-            self._lines.append(raw_text)
+        # 1. Partial chunk handling (Fluent Bit ``logtag: P`` / CRI ``P``).
+        # A partial chunk is a fragment of ONE physical line that the container
+        # runtime split (typically at 16KB). The following chunk therefore
+        # belongs to the same line and is concatenated without a newline.
+        if self._was_partial and self._lines:
+            self._lines[-1] += raw_text
             self._was_partial = line.is_partial
             return None
 
-        if line.is_partial:
-            if not self._lines:
-                self._current_start_line = line.line_num
-            self._lines.append(raw_text)
-            self._was_partial = True
-            return None
+        event = self._push_physical_line(line.line_num, raw_text)
+        # The first chunk of a split line went through normal new-record /
+        # continuation detection above; remember to glue the next chunk on.
+        self._was_partial = line.is_partial
+        return event
 
+    def _push_physical_line(self, line_num: int, raw_text: str) -> StitchedEvent | None:
         # 2. Check if current line starts a new traceback block
-        starts_traceback = bool(
-            _PYTHON_TRACEBACK.match(raw_text)
-            or _GO_PANIC.match(raw_text)
-            or ("Exception:" in raw_text and not raw_text.startswith(" "))
-        )
+        starts_traceback: str | None = None
+        if _PYTHON_TRACEBACK.match(raw_text):
+            starts_traceback = "python"
+        elif _GO_PANIC.match(raw_text):
+            starts_traceback = "go"
+        elif "Exception:" in raw_text and not raw_text.startswith(" "):
+            starts_traceback = "java"
 
         # 3. Check if current line is unequivocally the start of a brand new log record
         is_new_record = bool(_NEW_LOG_RE.match(raw_text))
@@ -107,25 +117,33 @@ class LogStitcher:
         is_cont = not is_new_record and is_continuation_line(raw_text)
 
         if self._lines:
-            can_continue_traceback = (
-                self._in_traceback
-                and not starts_traceback
-                and not is_new_record
-                and len(self._lines) < self.max_buffer_lines
-            )
+            room = len(self._lines) < self.max_buffer_lines
+            free_line = not starts_traceback and not is_new_record and room
 
-            if is_cont or can_continue_traceback:
+            if is_cont:
                 self._lines.append(raw_text)
                 return None
-            else:
-                # Flush previous event
-                event = self._flush()
-                self._current_start_line = line.line_num
-                self._lines = [raw_text]
-                self._in_traceback = starts_traceback
-                return event
+            if free_line and self._in_traceback == "python":
+                # Python ends with one unindented "SomeError: message" line
+                # after the frames; anything after that is a new event.
+                self._lines.append(raw_text)
+                self._in_traceback = None
+                return None
+            if free_line and self._in_traceback == "go" and _GO_FUNC_LINE.match(raw_text):
+                # Go frames alternate unindented function lines with
+                # tab-indented file:line lines.
+                self._lines.append(raw_text)
+                return None
+
+            # Flush previous event (Java traces only continue through
+            # "at ..." / "Caused by:" / indented lines, handled by is_cont).
+            event = self._flush()
+            self._current_start_line = line_num
+            self._lines = [raw_text]
+            self._in_traceback = starts_traceback
+            return event
         else:
-            self._current_start_line = line.line_num
+            self._current_start_line = line_num
             self._lines = [raw_text]
             self._in_traceback = starts_traceback
             return None
@@ -145,7 +163,7 @@ class LogStitcher:
             continuation_lines=count,
         )
         self._lines = []
-        self._in_traceback = False
+        self._in_traceback = None
         self._was_partial = False
         return event
 

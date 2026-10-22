@@ -138,3 +138,47 @@ def micros_to_iso(micros: int | None) -> str:
         return ""
     dt = datetime.fromtimestamp(micros / 1_000_000.0, tz=timezone.utc)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+_NUMERIC_RE = re.compile(r"^\d+(?:\.\d+)?$")
+
+
+def epoch_to_micros(value: float) -> int | None:
+    """Convert a numeric epoch of unknown unit (s, ms, us, ns) to microseconds.
+
+    The unit is inferred from magnitude, which is unambiguous for any date
+    between 2001 and 2286.
+    """
+    if value <= 0:
+        return None
+    if value < 1e11:  # seconds
+        return int(round(value * 1_000_000))
+    if value < 1e14:  # milliseconds
+        return int(round(value * 1_000))
+    if value < 1e17:  # microseconds
+        return int(value)
+    return int(value // 1_000)  # nanoseconds
+
+
+def parse_any_ts(value: object) -> int | None:
+    """Parse a timestamp field of unknown shape into microsecond epoch.
+
+    Accepts ISO-8601 strings, numeric epochs (int/float) and numeric strings.
+    Never raises; returns ``None`` when the value is not understood.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return epoch_to_micros(float(value))
+    text = str(value).strip()
+    if not text:
+        return None
+    if _NUMERIC_RE.match(text):
+        try:
+            return epoch_to_micros(float(text))
+        except ValueError:
+            return None
+    try:
+        return parse_iso_micros(text)
+    except ValueError:  # e.g. month 13 from a malformed string
+        return None

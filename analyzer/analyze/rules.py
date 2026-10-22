@@ -164,33 +164,40 @@ class RuleEngine:
         time_clauses = []
         params: list[Any] = []
 
-        if target_table in ("events", "k8s_facts", "metrics"):
-            if from_micros is not None:
-                time_clauses.append("ts_micros >= ?")
-                params.append(from_micros)
-            if to_micros is not None:
-                time_clauses.append("ts_micros <= ?")
-                params.append(to_micros)
+        # k8s_facts and metrics are largely point-in-time snapshots taken when
+        # the bundle was collected and often carry no timestamp. ``NULL >= x``
+        # is false in SQL, so without the IS NULL escape every snapshot row
+        # would silently vanish as soon as a time window is applied.
+        keep_undated = target_table in ("k8s_facts", "metrics")
+        if from_micros is not None:
+            time_clauses.append("(ts_micros IS NULL OR ts_micros >= ?)" if keep_undated else "ts_micros >= ?")
+            params.append(from_micros)
+        if to_micros is not None:
+            time_clauses.append("(ts_micros IS NULL OR ts_micros <= ?)" if keep_undated else "ts_micros <= ?")
+            params.append(to_micros)
 
         where_expr = f"({rule.condition})"
         if time_clauses:
             where_expr += f" AND {' AND '.join(time_clauses)}"
 
+        # A single aggregated k8s Event may represent many occurrences.
+        count_expr = "COALESCE(SUM(COALESCE(occurrences, 1)), 0)" if target_table == "k8s_facts" else "COUNT(*)"
+
         try:
             # 1. Get count and time bounds
             agg_sql = f"""
                 SELECT
-                    COUNT(*),
+                    {count_expr},
                     MIN(ts_micros),
                     MAX(ts_micros)
                 FROM {target_table}
                 WHERE {where_expr}
             """
             row = store.conn.execute(agg_sql, params).fetchone()
-            if not row or row[0] == 0:
+            if not row or not row[0]:
                 return None
 
-            count = row[0]
+            count = int(row[0])
             first_ts = row[1]
             last_ts = row[2]
 

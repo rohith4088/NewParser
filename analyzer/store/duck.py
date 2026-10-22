@@ -48,6 +48,10 @@ class SessionStore:
             self.conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS unit_id VARCHAR")
         except Exception:
             pass
+        try:
+            self.conn.execute("ALTER TABLE k8s_facts ADD COLUMN IF NOT EXISTS occurrences INTEGER DEFAULT 1")
+        except Exception:
+            pass
 
     def close(self) -> None:
         with self._lock:
@@ -176,15 +180,18 @@ class SessionStore:
             pass
 
     def insert_k8s_facts(self, facts: Iterable[K8sFact]) -> int:
-        tuples = [f.to_tuple() for f in facts]
+        tuples = []
+        for f in facts:
+            t = f.to_tuple()
+            tuples.append(t if len(t) == 9 else (*t[:8], 1))
         if not tuples:
             return 0
         with self._lock:
             self.conn.executemany(
                 """
                 INSERT INTO k8s_facts (
-                    ts_micros, kind, namespace, name, reason, exit_code, restarts, detail
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ts_micros, kind, namespace, name, reason, exit_code, restarts, detail, occurrences
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 tuples,
             )
@@ -418,7 +425,10 @@ class SessionStore:
     def get_k8s_facts(
         self, reason: str | None = None, namespace: str | None = None
     ) -> list[dict[str, Any]]:
-        query = "SELECT ts_micros, kind, namespace, name, reason, exit_code, restarts, detail FROM k8s_facts WHERE 1=1"
+        query = (
+            "SELECT ts_micros, kind, namespace, name, reason, exit_code, restarts, detail, "
+            "COALESCE(occurrences, 1) FROM k8s_facts WHERE 1=1"
+        )
         params: list[Any] = []
         if reason:
             query += " AND reason = ?"
@@ -430,7 +440,7 @@ class SessionStore:
 
         with self._lock:
             rows = self.conn.execute(query, params).fetchall()
-        cols = ["ts_micros", "kind", "namespace", "name", "reason", "exit_code", "restarts", "detail"]
+        cols = ["ts_micros", "kind", "namespace", "name", "reason", "exit_code", "restarts", "detail", "occurrences"]
         return [dict(zip(cols, row)) for row in rows]
 
     def get_timeline_data(
