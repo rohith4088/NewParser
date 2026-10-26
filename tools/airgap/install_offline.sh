@@ -93,8 +93,17 @@ echo "    Ollama service enabled and started."
 echo "==> [3/4] Installing Analyzer Python dependencies..."
 cd "${SCRIPT_DIR}"
 if [ -d "${SCRIPT_DIR}/wheels" ]; then
-    python3 -m pip install --break-system-packages --no-index --find-links="${SCRIPT_DIR}/wheels" -e . || \
-    python3 -m pip install --no-index --find-links="${SCRIPT_DIR}/wheels" -e . || true
+    python3 -c "
+import glob, zipfile
+from pathlib import Path
+target = Path('/usr/local/lib/python3.12/dist-packages')
+target.mkdir(parents=True, exist_ok=True)
+wheels = glob.glob('${SCRIPT_DIR}/wheels/*.whl')
+for whl in wheels:
+    with zipfile.ZipFile(whl) as z:
+        z.extractall(target)
+"
+    cp -r "${SCRIPT_DIR}/analyzer" /usr/local/lib/python3.12/dist-packages/ 2>/dev/null || true
 fi
 
 # Prepare working directories
@@ -131,13 +140,13 @@ systemctl daemon-reload
 systemctl enable --now onprem-analyzer
 echo "    Analyzer service enabled and started."
 
-# 5. Verification
+# 5. Verification (using standard python urllib, no curl needed)
 echo "==> [4/4] Verifying running services..."
 sleep 4
 
 HEALTH_OK=false
 for i in {1..20}; do
-    if curl -s http://127.0.0.1:8080/api/health | grep -q '"status": "ok"'; then
+    if python3 -c "import urllib.request; resp = urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3); exit(0 if b'ok' in resp.read() else 1)" 2>/dev/null; then
         HEALTH_OK=true
         break
     fi
@@ -146,14 +155,14 @@ done
 
 OLLAMA_OK=false
 for i in {1..20}; do
-    if curl -s http://127.0.0.1:11434/api/tags 2>/dev/null | grep -q 'models'; then
+    if python3 -c "import urllib.request; resp = urllib.request.urlopen('http://127.0.0.1:11434/api/tags', timeout=3); exit(0 if b'models' in resp.read() else 1)" 2>/dev/null; then
         OLLAMA_OK=true
         break
     fi
     sleep 2
 done
 
-MODELS_LIST=$(curl -s http://127.0.0.1:11434/api/tags 2>/dev/null | grep -o '"name":"[^"]*"' | cut -d'"' -f4 | tr '\n' ' ' || echo "Available")
+MODELS_LIST=$(python3 -c "import urllib.request, json; data=json.loads(urllib.request.urlopen('http://127.0.0.1:11434/api/tags', timeout=3).read()); print(' '.join(m['name'] for m in data.get('models', [])))" 2>/dev/null || echo "Available")
 
 echo ""
 echo "======================================================================"
