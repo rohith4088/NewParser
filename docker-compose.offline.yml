@@ -1,0 +1,46 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: onprem-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_NUM_PARALLEL=4
+      - OLLAMA_MAX_LOADED_MODELS=2
+
+  analyzer:
+    image: onprem-analyzer:latest
+    container_name: onprem-analyzer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persistent DuckDB session storage
+      - ./data:/app/data
+      # Drop folder for multi-gigabyte support bundle tarballs
+      - ./bundles:/app/bundles
+      # Detection rules and topology
+      - ./rules:/app/rules:ro
+      - ./topology:/app/topology:ro
+    environment:
+      - ANALYZER_HOST=0.0.0.0
+      - ANALYZER_PORT=8080
+      - ANALYZER_DATA_DIR=/app/data
+      - ANALYZER_BUNDLES_DIR=/app/bundles
+      - ANALYZER_RULES_DIR=/app/rules
+      - ANALYZER_TOPOLOGY_PATH=/app/topology/services.yaml
+      - ANALYZER_AI_MODEL=${ANALYZER_AI_MODEL:-qwen2.5:3b}
+      - ANALYZER_OLLAMA_URL=http://ollama:11434
+      - ANALYZER_AI_NUM_CTX=${ANALYZER_AI_NUM_CTX:-8192}
+    depends_on:
+      - ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3

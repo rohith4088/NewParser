@@ -98,12 +98,13 @@ class BaseAgent:
         if not url:
             return None
 
+        num_ctx = int(os.environ.get("ANALYZER_AI_NUM_CTX", 8192 if any(k in self.model for k in ("14b", "27b", "32b", "70b")) else 4096))
         payload = {
             "model": self.model,
             "format": "json",
             "stream": False,
             "options": {
-                "num_ctx": 2048,  # Compact context to keep 8GB RAM fast and responsive
+                "num_ctx": num_ctx,
                 "temperature": 0.1,  # Low temperature for factual, deterministic analysis
             },
             "messages": [

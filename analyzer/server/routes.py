@@ -798,9 +798,20 @@ class RequestHandler(BaseHTTPRequestHandler):
         return None
 
     PREFERRED_AI_MODELS = [
+        "qwen2.5:32b",
+        "qwen3.8:27b",
+        "qwen2.5:14b",
+        "qwen2.5:7b",
         "qwen2.5:3b",
+        "qwen2.5-coder:32b",
+        "qwen2.5-coder:14b",
+        "qwen2.5-coder:7b",
         "qwen2.5-coder:3b",
+        "llama3.3:70b",
+        "llama3.1:8b",
         "llama3.2:3b",
+        "deepseek-r1:14b",
+        "deepseek-r1:8b",
         "deepseek-r1:1.5b",
         "qwen3.5:0.8b",
     ]
@@ -918,12 +929,13 @@ class RequestHandler(BaseHTTPRequestHandler):
         target_model = requested_model or getattr(self.config, "ai_model", "qwen2.5:3b")
         enable_think = bool(body.get("think", False))
 
+        num_ctx = int(os.environ.get("ANALYZER_AI_NUM_CTX", 8192 if any(k in target_model for k in ("14b", "27b", "32b", "70b")) else 4096))
         ollama_payload = {
             "model": target_model,
             "messages": messages,
             "stream": True,
             "options": {
-                "num_ctx": 4096,  # Optimized for 8GB RAM + Metal GPU KV-cache efficiency
+                "num_ctx": num_ctx,
                 "num_predict": -1,  # -1 = Unlimited/Full-length reply until natural completion
                 "temperature": 0.2,
             },
