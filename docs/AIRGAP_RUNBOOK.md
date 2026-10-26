@@ -204,7 +204,49 @@ To integrate the local offline AI with HPE VME AI Services:
 
 ---
 
-## 9. Troubleshooting & FAQ
+## 9. Adding Another AI Model (e.g. `gemma2:27b` / `qwen2.5:32b`) Without Re-installing
+
+You **do NOT need to reinstall** the offline bundle. Adding a new model only requires transferring the model weight files into Ollama's model directory.
+
+### Step 9.1: Package Only the New Model on Windows Jump Server
+In PowerShell on the connected Jump Server:
+```powershell
+# Download and package ONLY the requested model (e.g., gemma2:27b or qwen2.5:32b):
+py tools\airgap\prepare_airgap_bundle.py --model-only gemma2:27b
+```
+This generates a standalone model archive: `ollama-gemma2-27b-addon.tar.gz`.
+
+### Step 9.2: Transfer to the Ubuntu VM
+1. Start the HTTP server on Windows:
+   ```powershell
+   py -m http.server 8000
+   ```
+2. In the VM's Firefox browser, download:
+   `http://<JUMP_SERVER_IP>:8000/ollama-gemma2-27b-addon.tar.gz`
+
+### Step 9.3: Extract into Ollama (Ubuntu Terminal as Root)
+```bash
+# Extract model layers directly into Ollama's storage
+tar -xzf /home/rohith/Downloads/ollama-gemma2-27b-addon.tar.gz -C /usr/share/ollama/.ollama/
+chown -R ollama:ollama /usr/share/ollama/.ollama
+
+# Restart Ollama to register the new model
+systemctl restart ollama
+```
+
+### Step 9.4: Use the New Model
+- **In the Web UI:** Refresh `http://10.55.58.52:8080`. The new model automatically appears in the Copilot dropdown!
+- **To make it the system default on boot (Optional):**
+  Edit `/etc/systemd/system/onprem-analyzer.service`:
+  ```bash
+  sed -i 's/qwen2.5:3b/gemma2:27b/' /etc/systemd/system/onprem-analyzer.service
+  systemctl daemon-reload
+  systemctl restart onprem-analyzer
+  ```
+
+---
+
+## 10. Troubleshooting & FAQ
 
 ### Issue: `sed: unknown option to 's'` or `./install_offline.sh: command not found`
 - **Cause:** Windows line endings (`\r\n`) or shell syntax typo.

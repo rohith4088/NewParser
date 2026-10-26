@@ -167,6 +167,7 @@ def download_python_wheels(pkg_root: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build offline air-gap deployment bundle.")
     parser.add_argument("models", nargs="*", default=["qwen2.5:3b"], help="Ollama model names to pre-cache")
+    parser.add_argument("--model-only", action="store_true", help="Download and package only the specified AI model(s) as an add-on archive")
     args = parser.parse_args()
 
     models = args.models
@@ -177,6 +178,33 @@ def main() -> None:
     bin_dir = pkg_root / "bin"
     img_dir = pkg_root / "images"
     ollama_dir = pkg_root / "ollama_data"
+
+    if args.model_only:
+        print("=" * 70)
+        print(f"  Downloading Model Add-on Only: {', '.join(models)}")
+        print("=" * 70)
+        ollama_dir.mkdir(parents=True, exist_ok=True)
+        for m in models:
+            download_ollama_model(m, ollama_dir)
+        safe_name = models[0].replace(':', '-').replace('/', '-')
+        addon_archive = project_root / f"ollama-{safe_name}-addon.tar.gz"
+        log(f"Creating add-on archive: {addon_archive.name}...")
+        with tarfile.open(str(addon_archive), "w:gz") as tar:
+            tar.add(str(ollama_dir / "models"), arcname="models")
+        size_mb = addon_archive.stat().st_size / (1024 * 1024)
+        print("=" * 70)
+        print(f"  [SUCCESS] Model Add-on Created: {addon_archive}")
+        print(f"  Size: {size_mb:.1f} MB ({size_mb/1024:.2f} GB)")
+        print("")
+        print("  To load into your air-gapped Ubuntu VM (No re-install needed!):")
+        print("  1. Transfer archive to VM via HTTP (py -m http.server 8000)")
+        print("  2. In Ubuntu terminal as root, run:")
+        print(f"     tar -xzf {addon_archive.name} -C /usr/share/ollama/.ollama/")
+        print("     chown -R ollama:ollama /usr/share/ollama/.ollama")
+        print("     systemctl restart ollama")
+        print("  3. Refresh the Analyzer Web UI - the model will appear in the dropdown!")
+        print("=" * 70)
+        return
 
     print("=" * 70)
     print("  Creating Air-Gap Deployment Bundle (Zero Docker Required on Windows)")
