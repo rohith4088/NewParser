@@ -1228,7 +1228,7 @@
         </div>
         <div class="ai-header-actions">
           <button class="btn btn-xs btn-outline" id="btnClearAiChat" title="Clear conversation history">Clear</button>
-          <button class="modal-close" id="btnCloseAiDrawer" title="Close AI Copilot">&times;</button>
+          <button class="modal-close" id="btnCloseAiDrawer" title="Close AI Copilot" onclick="document.getElementById('aiDrawer')?.classList.remove('open');document.getElementById('aiDrawerBackdrop')?.classList.remove('active');">&times;</button>
         </div>
       </div>
 

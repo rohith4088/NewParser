@@ -3192,7 +3192,29 @@ code, pre, .mono, input[type="text"], .datetime-input, .pill-val, .bundle-stat, 
 .ai-header-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+}
+
+#btnCloseAiDrawer {
+  width: 28px;
+  height: 28px;
+  font-size: 20px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e4e4e7;
+  transition: all 0.15s ease;
+}
+
+#btnCloseAiDrawer:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #f87171;
 }
 
 /* Dynamic Context Banner */

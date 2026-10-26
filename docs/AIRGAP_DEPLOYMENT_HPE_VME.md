@@ -76,56 +76,68 @@ Attempting to install Docker via loose `.deb` packages on an air-gapped Ubuntu m
 ---
 
 ### Step 1: Prepare the Air-Gap Bundle on the Jump Server
-*(Requires Internet access on the Jump Server)*
+*(Requires Internet access on the Jump Server - Windows, Linux, or macOS)*
 
-You can package **a single model** or **multiple models simultaneously** (e.g. a fast 3B model + a high-accuracy 27B/32B model so users can switch between them in the UI dropdown):
+Run the cross-platform Python bundler (which requires **zero Docker** on Windows):
 
-```bash
-cd /Users/rohithr/Desktop/onpremParser/onprem-analyzer
-chmod +x tools/airgap/*.sh
+```powershell
+# On Windows PowerShell:
+py tools\airgap\prepare_airgap_bundle.py qwen2.5:3b
 
-# Option A: Bundle a larger 27B model
-./tools/airgap/prepare_airgap_bundle.sh qwen3.8:27b
+# Or on Linux / macOS:
+python3 tools/airgap/prepare_airgap_bundle.py qwen2.5:3b
 
-# Option B: Bundle both a fast 3B model AND a 27B/32B model in one package:
-./tools/airgap/prepare_airgap_bundle.sh qwen2.5:3b qwen3.8:27b qwen2.5:32b
+# You can also bundle larger models (e.g., 27B or 32B):
+py tools\airgap\prepare_airgap_bundle.py qwen2.5:3b qwen2.5:32b
 ```
 
 This script will:
-- Check for existing models in `~/.ollama` (prompting to copy rather than re-downloading 18GB).
 - Download official Docker 27.x static binaries and standalone `docker-compose`.
-- Build and export `onprem-analyzer:latest` and `ollama/ollama:latest` images.
-- Pre-cache all requested model weights directly into `ollama_data/`.
+- Download official Linux standalone Ollama AI engine (`ollama-linux-amd64.tgz`).
+- Pre-cache all requested model weights directly from `registry.ollama.ai` over HTTPS.
+- Download Linux Python wheels for all dependencies (`duckdb`, `pyyaml`, `jinja2`, `rich`, etc.).
 - Package everything into `onprem-analyzer-offline-bundle.tar.gz`.
 
 ---
 
 ### Step 2: Transfer to the HPE VME VM (`10.55.58.52`)
 
-Since the Jump Server can route to `10.55.58.52` over your management network:
-```bash
-scp onprem-analyzer-offline-bundle.tar.gz <username>@10.55.58.52:~/
+Since Ubuntu 24.04 Desktop does not install OpenSSH by default, transfer directly via local HTTP:
+
+**On Windows Jump Server:**
+```powershell
+# In the directory containing onprem-analyzer-offline-bundle.tar.gz
+py -m http.server 8000
 ```
+
+**Inside Ubuntu VM (Morpheus HTML5 Console):**
+Open **Firefox** and download:
+```
+http://<JUMP_SERVER_IP>:8000/onprem-analyzer-offline-bundle.tar.gz
+```
+Save to `/home/rohith/Downloads/`.
 
 ---
 
 ### Step 3: 1-Click Install on Ubuntu 24.04 Target VM
 
-SSH into the target VM and execute:
+Open the terminal in the Ubuntu VM as root:
 ```bash
-ssh <username>@10.55.58.52
-tar -xzf onprem-analyzer-offline-bundle.tar.gz
-cd airgap_pkg
+sudo su -
+mkdir -p /home/rohith/Downloads/airgap_pkg
+tar -xzf /home/rohith/Downloads/onprem-analyzer-offline-bundle.tar.gz -C /home/rohith/Downloads/airgap_pkg --strip-components=1
+cd /home/rohith/Downloads/airgap_pkg
 
-# Run the automated installer (installs Docker, loads images, starts stack)
-sudo ./install_offline.sh
+# Strip Windows line endings & run installer
+tr -d '\r' < install_offline.sh > install_clean.sh
+bash install_clean.sh
 ```
 
-**What the installer does in under 60 seconds:**
+**What the installer does automatically:**
 1. Extracts static Docker binaries to `/usr/local/bin/`.
-2. Registers and starts `docker.service` with systemd.
-3. Runs `docker load` for the Analyzer and Ollama images.
-4. Boots `docker-compose.yml` with pre-mounted model weights.
+2. Installs Ollama standalone engine and registers pre-cached models in `/usr/share/ollama/.ollama/`.
+3. Unpacks all offline Python dependency wheels using Python's built-in `zipfile` (bypasses missing `pip`).
+4. Creates and boots `ollama.service` and `onprem-analyzer.service` via systemd.
 5. Runs local health checks on ports `8080` and `11434`.
 
 ---

@@ -2814,11 +2814,23 @@
       });
     }
 
-    // AI Copilot Drawer & Controls
-    on(el.btnOpenAiChat, "click", openAiDrawer);
+    // AI Copilot Drawer & Controls (toggle on/off, close on outside click)
+    on(el.btnOpenAiChat, "click", toggleAiDrawer);
     on(el.btnCloseAiDrawer, "click", closeAiDrawer);
     on(el.aiDrawerBackdrop, "click", closeAiDrawer);
     on(el.btnClearAiChat, "click", clearAiChat);
+
+    // Click anywhere outside the AI drawer closes it
+    document.addEventListener("click", (e) => {
+      if (el.aiDrawer && el.aiDrawer.classList.contains("open")) {
+        const isClickInside = el.aiDrawer.contains(e.target);
+        const isToggleBtn = el.btnOpenAiChat && el.btnOpenAiChat.contains(e.target);
+        const isLaunchTab = e.target.closest("#btnLaunchAiDrawerFromTab") || e.target.closest("[data-jump='ai']");
+        if (!isClickInside && !isToggleBtn && !isLaunchTab) {
+          closeAiDrawer();
+        }
+      }
+    });
 
     // Agentic Triage Controls
     on(el.btnOpenAgenticTriageTop, "click", () => switchTab("agentic"));
@@ -3021,6 +3033,15 @@
         el.aiStatusDot.title = "Ollama endpoint unreachable";
         if (el.aiStatusText) el.aiStatusText.textContent = "offline";
       }
+    }
+  }
+
+  function toggleAiDrawer() {
+    if (!el.aiDrawer) return;
+    if (el.aiDrawer.classList.contains("open")) {
+      closeAiDrawer();
+    } else {
+      openAiDrawer();
     }
   }
 
