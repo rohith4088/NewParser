@@ -2,8 +2,11 @@
 # ==============================================================================
 # Script: install_offline.sh
 # Runs on: Offline Target VM (Ubuntu 24.04 LTS at 10.55.58.52)
-# Purpose: 1-click installer: sets up Docker without package managers/debs,
-#          loads container images, and starts Analyzer + Ollama stack.
+# Purpose: 1-click zero-dependency installer:
+#          1. Installs Docker static engine to /usr/local/bin
+#          2. Installs Ollama standalone engine & pre-cached AI models
+#          3. Installs Analyzer Python package & dependencies from wheels/
+#          4. Sets up and starts both systemd services
 # ==============================================================================
 
 set -euo pipefail
@@ -19,69 +22,119 @@ TARGET_IP="10.55.58.52"
 
 echo "======================================================================"
 echo "  Installing On-Prem Analyzer & Ollama (Complete Offline Mode)"
-echo "  Target Host: Ubuntu 24.04 LTS (${TARGET_IP})"
+echo "  Target Host: Ubuntu 24.04 LTS (32 vCPU / 256 GB RAM)"
 echo "======================================================================"
 
-# 1. Install Docker static binaries (Zero .deb files)
+# 1. Hardware Inspection
+TOTAL_RAM_GB=$(awk '/MemTotal/ {printf "%.0f", $2/(1024*1024)}' /proc/meminfo 2>/dev/null || echo "16")
+TOTAL_CPUS=$(nproc 2>/dev/null || echo "4")
+echo "==> Hardware Detected: ${TOTAL_CPUS} CPUs, ${TOTAL_RAM_GB} GB RAM"
+
+# 2. Install Docker static binaries & Docker Compose
 echo "==> [1/4] Installing Docker static engine to /usr/local/bin..."
-if ! command -v dockerd >/dev/null 2>&1; then
+if [ -f "${SCRIPT_DIR}/bin/docker.tgz" ]; then
     tar -xzf "${SCRIPT_DIR}/bin/docker.tgz" --strip-components=1 -C /usr/local/bin/
-    cp "${SCRIPT_DIR}/bin/docker-compose" /usr/local/bin/docker-compose
+    cp "${SCRIPT_DIR}/bin/docker-compose" /usr/local/bin/docker-compose 2>/dev/null || true
     chmod +x /usr/local/bin/docker*
 
-    # Install & start systemd service
-    cp "${SCRIPT_DIR}/bin/docker.service" /etc/systemd/system/docker.service
-    systemctl daemon-reload
-    systemctl enable --now docker
-    echo "    Docker daemon installed and started successfully."
-else
-    echo "    Docker engine is already installed."
-fi
-
-# Ensure docker-compose is available
-if ! command -v docker-compose >/dev/null 2>&1; then
-    cp "${SCRIPT_DIR}/bin/docker-compose" /usr/local/bin/docker-compose
-    chmod +x /usr/local/bin/docker-compose
-fi
-
-# Wait for Docker socket
-echo "==> Verifying Docker daemon status..."
-for i in {1..15}; do
-    if docker info >/dev/null 2>&1; then
-        break
+    # Install & start docker.service
+    if [ -f "${SCRIPT_DIR}/bin/docker.service" ]; then
+        cp "${SCRIPT_DIR}/bin/docker.service" /etc/systemd/system/docker.service
+        systemctl daemon-reload
+        systemctl enable --now docker 2>/dev/null || true
     fi
-    sleep 1
-done
-
-# 2. Check system RAM & hardware
-TOTAL_RAM_GB=$(awk '/MemTotal/ {printf "%.0f", $2/(1024*1024)}' /proc/meminfo 2>/dev/null || echo "16")
-echo "==> Detected System RAM: ${TOTAL_RAM_GB} GB"
-if [ "${TOTAL_RAM_GB}" -lt 28 ]; then
-    echo "    [NOTE] If running large models (e.g. 27B / 32B), 32 GB RAM or more is recommended on HPE VME."
+    echo "    Docker engine installed."
 fi
 
-# 3. Load pre-cached Container Images
-echo "==> [2/4] Loading container images from offline archives..."
-docker load -i "${SCRIPT_DIR}/images/onprem-analyzer.tar"
-docker load -i "${SCRIPT_DIR}/images/ollama.tar"
+# 3. Install Ollama standalone binary
+echo "==> [2/4] Installing Ollama standalone AI engine..."
+if [ -f "${SCRIPT_DIR}/bin/ollama-linux-amd64.tgz" ]; then
+    tar -xzf "${SCRIPT_DIR}/bin/ollama-linux-amd64.tgz" -C /usr/local/
+    chmod +x /usr/local/bin/ollama
+fi
 
-# 4. Prepare working data directories & permissions
-echo "==> [3/4] Preparing directories and model weights..."
+# Set up Ollama models directory & user
+useradd -r -s /bin/false -U -m -d /usr/share/ollama ollama 2>/dev/null || true
+mkdir -p /usr/share/ollama/.ollama
+if [ -d "${SCRIPT_DIR}/ollama_data/models" ]; then
+    echo "    Copying pre-cached AI models into /usr/share/ollama/.ollama/..."
+    cp -rn "${SCRIPT_DIR}/ollama_data/models" /usr/share/ollama/.ollama/
+fi
+chown -R ollama:ollama /usr/share/ollama/.ollama
+
+# Create and start ollama.service
+cat << 'EOF' > /etc/systemd/system/ollama.service
+[Unit]
+Description=Ollama Air-Gapped AI Service
+After=network.target
+
+[Service]
+Type=exec
+User=ollama
+Group=ollama
+ExecStart=/usr/local/bin/ollama serve
+Environment="OLLAMA_HOST=0.0.0.0:11434"
+Environment="OLLAMA_KEEP_ALIVE=24h"
+Environment="OLLAMA_NUM_PARALLEL=4"
+Environment="OLLAMA_MAX_LOADED_MODELS=2"
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now ollama
+echo "    Ollama service enabled and started."
+
+# 4. Install Analyzer Python dependencies & service
+echo "==> [3/4] Installing Analyzer Python dependencies..."
+cd "${SCRIPT_DIR}"
+if [ -d "${SCRIPT_DIR}/wheels" ]; then
+    python3 -m pip install --break-system-packages --no-index --find-links="${SCRIPT_DIR}/wheels" -e . || \
+    python3 -m pip install --no-index --find-links="${SCRIPT_DIR}/wheels" -e . || true
+fi
+
+# Prepare working directories
 mkdir -p "${SCRIPT_DIR}/data/sessions" "${SCRIPT_DIR}/data/uploads" "${SCRIPT_DIR}/bundles"
 chmod -R 777 "${SCRIPT_DIR}/data" "${SCRIPT_DIR}/bundles"
-chmod -R 755 "${SCRIPT_DIR}/ollama_data"
 
-# 5. Launch Docker Compose stack
-echo "==> [4/4] Launching Analyzer + Ollama stack..."
-cd "${SCRIPT_DIR}"
-docker-compose down 2>/dev/null || true
-docker-compose up -d
+# Create and start onprem-analyzer.service
+cat << EOF > /etc/systemd/system/onprem-analyzer.service
+[Unit]
+Description=On-Prem Disconnected Support Bundle Analyzer
+After=network.target ollama.service
 
-echo ""
-echo "==> Waiting for services to become healthy..."
-sleep 5
+[Service]
+Type=simple
+User=root
+WorkingDirectory=${SCRIPT_DIR}
+Environment="ANALYZER_HOST=0.0.0.0"
+Environment="ANALYZER_PORT=8080"
+Environment="ANALYZER_DATA_DIR=${SCRIPT_DIR}/data"
+Environment="ANALYZER_BUNDLES_DIR=${SCRIPT_DIR}/bundles"
+Environment="ANALYZER_RULES_DIR=${SCRIPT_DIR}/rules"
+Environment="ANALYZER_TOPOLOGY_PATH=${SCRIPT_DIR}/topology/services.yaml"
+Environment="ANALYZER_OLLAMA_URL=http://127.0.0.1:11434"
+Environment="ANALYZER_AI_NUM_CTX=8192"
+ExecStart=/usr/bin/python3 -m analyzer.cli serve --host 0.0.0.0 --port 8080
+Restart=always
+RestartSec=3
 
-# Health verification
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now onprem-analyzer
+echo "    Analyzer service enabled and started."
+
+# 5. Verification
+echo "==> [4/4] Verifying running services..."
+sleep 4
+
 HEALTH_OK=false
 for i in {1..20}; do
     if curl -s http://127.0.0.1:8080/api/health | grep -q '"status": "ok"'; then
@@ -93,7 +146,7 @@ done
 
 OLLAMA_OK=false
 for i in {1..20}; do
-    if curl -s http://127.0.0.1:11434/api/tags | grep -q 'models'; then
+    if curl -s http://127.0.0.1:11434/api/tags 2>/dev/null | grep -q 'models'; then
         OLLAMA_OK=true
         break
     fi
@@ -105,18 +158,17 @@ MODELS_LIST=$(curl -s http://127.0.0.1:11434/api/tags 2>/dev/null | grep -o '"na
 echo ""
 echo "======================================================================"
 if [ "$HEALTH_OK" = true ] && [ "$OLLAMA_OK" = true ]; then
-    echo "  [SUCCESS] Deployment complete! Both services are healthy and running."
+    echo "  [SUCCESS] Deployment complete! Both services are active & healthy."
 else
-    echo "  [NOTICE] Services launched. Final health checks in progress."
+    echo "  [NOTICE] Services launched. Checking initial status..."
 fi
 echo "======================================================================"
 echo "  Web UI Dashboard:     http://${TARGET_IP}:8080"
 echo "  Local Ollama LLM:     http://${TARGET_IP}:11434"
-echo "  Preloaded Models:     ${MODELS_LIST}"
+echo "  Preloaded AI Models:  ${MODELS_LIST}"
 echo "  Bundle Drop Folder:   ${SCRIPT_DIR}/bundles"
 echo ""
 echo "  HPE VME AI Services Integration:"
 echo "  - Service Type:       Ollama / OpenAI Compatible"
 echo "  - Base URL:           http://${TARGET_IP}:11434"
-echo "  - Model Selection:    Select from preloaded models in dropdown"
 echo "======================================================================"

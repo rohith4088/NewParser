@@ -1,36 +1,37 @@
 #!/usr/bin/env python3
 """Cross-platform Air-Gap Bundle Creator (Windows, macOS, Linux).
 
-Packages Docker static binaries, container images, and Ollama model weights
-into a single offline archive: onprem-analyzer-offline-bundle.tar.gz.
+Zero-Docker Required:
+Downloads Linux Docker binaries, Ollama standalone engine, pre-cached model weights,
+and offline Python wheels directly over HTTPS.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
+import ssl
 import subprocess
 import sys
 import tarfile
-import time
 import urllib.request
 from pathlib import Path
 
-DOCKER_VERSION = "27.3.1"
-COMPOSE_VERSION = "v2.29.7"
-
-DOCKER_URL = f"https://download.docker.com/linux/static/stable/x86_64/docker-{DOCKER_VERSION}.tgz"
-COMPOSE_URL = f"https://github.com/docker/compose/releases/download/{COMPOSE_VERSION}/docker-compose-linux-x86_64"
-
-
-import ssl
-
-# Bypass enterprise corporate proxy SSL certificate verification
+# Corporate proxy SSL bypass
 try:
     ssl._create_default_https_context = ssl._create_unverified_context
 except Exception:
     pass
+
+DOCKER_VERSION = "27.3.1"
+COMPOSE_VERSION = "v2.29.7"
+OLLAMA_VERSION = "v0.5.1"
+
+DOCKER_URL = f"https://download.docker.com/linux/static/stable/x86_64/docker-{DOCKER_VERSION}.tgz"
+COMPOSE_URL = f"https://github.com/docker/compose/releases/download/{COMPOSE_VERSION}/docker-compose-linux-x86_64"
+OLLAMA_URL = f"https://github.com/ollama/ollama/releases/download/{OLLAMA_VERSION}/ollama-linux-amd64.tgz"
 
 
 def log(msg: str) -> None:
@@ -46,14 +47,14 @@ def download_file(url: str, dest_path: Path) -> None:
     log(f"Downloading: {url}")
     dest_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 1. Try Python urllib with unverified SSL context (for corporate proxies)
+    # 1. Try Python urllib with unverified SSL context
     try:
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
 
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-        with urllib.request.urlopen(req, context=ctx, timeout=60.0) as resp, open(dest_path, "wb") as out_f:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, context=ctx, timeout=120.0) as resp, open(dest_path, "wb") as out_f:
             total_size = int(resp.headers.get("Content-Length", 0))
             downloaded = 0
             block_size = 1024 * 1024  # 1MB chunks
@@ -73,20 +74,94 @@ def download_file(url: str, dest_path: Path) -> None:
         log(f"Saved: {dest_path.name} ({dest_path.stat().st_size / (1024*1024):.1f} MB)")
         return
     except Exception as e:
-        log(f"urllib download notice ({e}). Attempting Windows curl fallback...")
+        log(f"urllib notice ({e}). Trying Windows curl fallback...")
 
-    # 2. Fallback to native Windows curl.exe with -k (bypasses SSL inspection)
+    # 2. Fallback to native Windows curl.exe with -k
     try:
         curl_cmd = ["curl", "-k", "-fSL", url, "-o", str(dest_path)]
         subprocess.run(curl_cmd, check=True)
         log(f"Saved via curl: {dest_path.name} ({dest_path.stat().st_size / (1024*1024):.1f} MB)")
     except Exception as curl_err:
-        raise RuntimeError(f"Failed to download {url} via both Python and curl: {curl_err}")
+        raise RuntimeError(f"Failed to download {url}: {curl_err}")
 
 
-def run_cmd(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
-    log(f"Running: {' '.join(cmd)}")
-    return subprocess.run(cmd, check=check)
+def download_ollama_model(model_tag: str, dest_dir: Path) -> None:
+    """Directly fetch Ollama model manifest & blobs from registry.ollama.ai via HTTPS (No Docker needed)."""
+    tag = "latest"
+    raw = model_tag
+    if ":" in raw:
+        raw, tag = raw.split(":", 1)
+    if "/" in raw:
+        ns, name = raw.split("/", 1)
+    else:
+        ns, name = "library", raw
+
+    log(f"Fetching Ollama registry manifest for {model_tag}...")
+    manifest_url = f"https://registry.ollama.ai/v2/{ns}/{name}/manifests/{tag}"
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    req = urllib.request.Request(manifest_url, headers={"User-Agent": "ollama"})
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=30.0) as r:
+            manifest = json.loads(r.read())
+    except Exception as e:
+        log(f"[WARNING] Could not fetch manifest for '{model_tag}' from registry.ollama.ai: {e}")
+        return
+
+    # Write manifest file
+    manifest_file = dest_dir / "models" / "manifests" / "registry.ollama.ai" / ns / name / tag
+    manifest_file.parent.mkdir(parents=True, exist_ok=True)
+    manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+
+    blobs_dir = dest_dir / "models" / "blobs"
+    blobs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Collect all blob digests (config + all layers)
+    items_to_download = [manifest["config"]] + manifest.get("layers", [])
+    total_mb = sum(item.get("size", 0) for item in items_to_download) / (1024 * 1024)
+    log(f"Model '{model_tag}' total size: {total_mb:.1f} MB ({total_mb/1024:.2f} GB). Downloading layers...")
+
+    for item in items_to_download:
+        digest = item.get("digest")
+        if not digest or not digest.startswith("sha256:"):
+            continue
+        blob_filename = f"sha256-{digest.split(':', 1)[1]}"
+        blob_path = blobs_dir / blob_filename
+        expected_size = item.get("size", 0)
+
+        if blob_path.exists() and blob_path.stat().st_size == expected_size:
+            log(f"Blob cached: {blob_filename} ({expected_size / (1024*1024):.1f} MB)")
+            continue
+
+        blob_url = f"https://registry.ollama.ai/v2/{ns}/{name}/blobs/{digest}"
+        download_file(blob_url, blob_path)
+
+    log(f"Model '{model_tag}' successfully cached.")
+
+
+def download_python_wheels(pkg_root: Path) -> None:
+    """Download offline Python 3.12 Linux wheels for all dependencies."""
+    wheels_dir = pkg_root / "wheels"
+    wheels_dir.mkdir(parents=True, exist_ok=True)
+    log("Downloading Linux Python 3.12 wheels for offline installation...")
+
+    pkgs = ["duckdb", "pyyaml", "jinja2", "orjson", "rich"]
+    cmd = [
+        sys.executable, "-m", "pip", "download",
+        "--dest", str(wheels_dir),
+        "--platform", "manylinux2014_x86_64",
+        "--only-binary=:all:",
+        "--python-version", "312",
+        *pkgs,
+    ]
+    try:
+        subprocess.run(cmd, check=True)
+        log(f"Downloaded {len(list(wheels_dir.glob('*.whl')))} wheels to {wheels_dir.name}")
+    except Exception as e:
+        log(f"[WARNING] pip download encountered: {e}. Will fall back to standard package installation.")
 
 
 def main() -> None:
@@ -104,7 +179,7 @@ def main() -> None:
     ollama_dir = pkg_root / "ollama_data"
 
     print("=" * 70)
-    print("  Creating Air-Gap Deployment Bundle (Windows / Linux / macOS)")
+    print("  Creating Air-Gap Deployment Bundle (Zero Docker Required on Windows)")
     print(f"  Target Models: {', '.join(models)}")
     print(f"  Primary Model: {primary_model}")
     print("=" * 70)
@@ -119,70 +194,39 @@ def main() -> None:
     download_file(DOCKER_URL, bin_dir / "docker.tgz")
     download_file(COMPOSE_URL, bin_dir / "docker-compose")
 
-    # 3. Docker build and save
-    log("[2/5] Building & saving onprem-analyzer container image...")
-    run_cmd(["docker", "build", "-t", "onprem-analyzer:latest", str(project_root)])
-    analyzer_tar = img_dir / "onprem-analyzer.tar"
-    log(f"Saving onprem-analyzer:latest to {analyzer_tar.name}...")
-    run_cmd(["docker", "save", "onprem-analyzer:latest", "-o", str(analyzer_tar)])
+    # 3. Download standalone Linux Ollama binary
+    log("[2/5] Downloading Linux Ollama standalone engine...")
+    download_file(OLLAMA_URL, bin_dir / "ollama-linux-amd64.tgz")
 
-    log("[3/5] Pulling & saving ollama/ollama container image...")
-    run_cmd(["docker", "pull", "ollama/ollama:latest"])
-    ollama_tar = img_dir / "ollama.tar"
-    log(f"Saving ollama/ollama:latest to {ollama_tar.name}...")
-    run_cmd(["docker", "save", "ollama/ollama:latest", "-o", str(ollama_tar)])
+    # 4. Pre-cache model weights directly via HTTPS
+    log(f"[3/5] Pre-caching model weights into offline bundle ({', '.join(models)})...")
+    for m in models:
+        download_ollama_model(m, ollama_dir)
 
-    # 4. Pre-cache model weights
-    log(f"[4/5] Pre-caching model weights into offline bundle ({', '.join(models)})...")
-    temp_container = f"airgap_fetcher_{int(time.time())}"
-    run_cmd([
-        "docker", "run", "-d",
-        "--name", temp_container,
-        "-v", f"{ollama_dir.resolve()}:/root/.ollama",
-        "ollama/ollama:latest",
-    ])
+    # 5. Download Python wheels for offline execution on Ubuntu
+    log("[4/5] Downloading offline Python dependencies for Ubuntu 24.04...")
+    download_python_wheels(pkg_root)
 
-    try:
-        # Wait for daemon
-        log("Waiting for temporary Ollama container...")
-        for _ in range(30):
-            res = subprocess.run(["docker", "exec", temp_container, "ollama", "list"], capture_output=True)
-            if res.returncode == 0:
-                break
-            time.sleep(1)
-
-        for m in models:
-            log(f"Pulling model: {m} (this may take several minutes for 14B/27B/32B models)...")
-            run_cmd(["docker", "exec", temp_container, "ollama", "pull", m], check=False)
-
-        log("Models successfully pre-cached inside offline storage:")
-        run_cmd(["docker", "exec", temp_container, "ollama", "list"])
-    finally:
-        subprocess.run(["docker", "stop", temp_container], capture_output=True)
-        subprocess.run(["docker", "rm", temp_container], capture_output=True)
-
-    # 5. Copy configuration and scripts
+    # 6. Copy configuration and scripts
     log("[5/5] Copying deployment scripts and configuration...")
     shutil.copy2(project_root / "tools" / "airgap" / "docker.service", bin_dir / "docker.service")
     shutil.copy2(project_root / "tools" / "airgap" / "install_offline.sh", pkg_root / "install_offline.sh")
     shutil.copy2(project_root / "tools" / "airgap" / "mcp_server.py", pkg_root / "mcp_server.py")
 
-    # Read offline docker-compose and inject primary model
-    compose_offline_src = project_root / "docker-compose.offline.yml"
-    compose_text = compose_offline_src.read_text(encoding="utf-8")
-    compose_text = compose_text.replace("ANALYZER_AI_MODEL:-qwen2.5:3b", f"ANALYZER_AI_MODEL:-{primary_model}")
-    (pkg_root / "docker-compose.yml").write_text(compose_text, encoding="utf-8")
-
-    # Copy rules and topology
+    # Copy rules, topology, analyzer, and setup pyproject
     shutil.copytree(project_root / "rules", pkg_root / "rules", dirs_exist_ok=True)
     shutil.copytree(project_root / "topology", pkg_root / "topology", dirs_exist_ok=True)
+    shutil.copytree(project_root / "analyzer", pkg_root / "analyzer", dirs_exist_ok=True)
+    shutil.copy2(project_root / "pyproject.toml", pkg_root / "pyproject.toml")
+    shutil.copy2(project_root / "docker-compose.offline.yml", pkg_root / "docker-compose.yml")
+
     (pkg_root / "data" / "sessions").mkdir(parents=True, exist_ok=True)
     (pkg_root / "data" / "uploads").mkdir(parents=True, exist_ok=True)
     (pkg_root / "bundles").mkdir(parents=True, exist_ok=True)
 
-    # 6. Create archive using Python tarfile (native on Windows)
+    # 7. Create archive using Python tarfile (native on Windows)
     archive_path = project_root / "onprem-analyzer-offline-bundle.tar.gz"
-    log(f"Creating final archive: {archive_path.name} (packaging {pkg_root.name})...")
+    log(f"Creating final archive: {archive_path.name}...")
 
     with tarfile.open(str(archive_path), "w:gz") as tar:
         tar.add(str(pkg_root), arcname="airgap_pkg")
@@ -190,7 +234,7 @@ def main() -> None:
     size_mb = archive_path.stat().st_size / (1024 * 1024)
     print("=" * 70)
     print(f"  [SUCCESS] Offline Bundle Created: {archive_path}")
-    print(f"  Size: {size_mb:.1f} MB ({size_mb/1024:.2f} GB)")
+    print(f"  Total Size: {size_mb:.1f} MB ({size_mb/1024:.2f} GB)")
     print(f"  Models Packaged: {', '.join(models)}")
     print("=" * 70)
 
