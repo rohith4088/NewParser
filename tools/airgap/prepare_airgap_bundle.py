@@ -24,12 +24,21 @@ DOCKER_URL = f"https://download.docker.com/linux/static/stable/x86_64/docker-{DO
 COMPOSE_URL = f"https://github.com/docker/compose/releases/download/{COMPOSE_VERSION}/docker-compose-linux-x86_64"
 
 
+import ssl
+
+# Bypass enterprise corporate proxy SSL certificate verification
+try:
+    ssl._create_default_https_context = ssl._create_unverified_context
+except Exception:
+    pass
+
+
 def log(msg: str) -> None:
     print(f"[*] {msg}", flush=True)
 
 
 def download_file(url: str, dest_path: Path) -> None:
-    """Download a file with progress logging."""
+    """Download a file with progress logging, SSL bypass, and curl fallback."""
     if dest_path.exists() and dest_path.stat().st_size > 0:
         log(f"Cached file exists: {dest_path.name}")
         return
@@ -37,18 +46,42 @@ def download_file(url: str, dest_path: Path) -> None:
     log(f"Downloading: {url}")
     dest_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def report_progress(block_num: int, block_size: int, total_size: int) -> None:
-        downloaded = block_num * block_size
-        if total_size > 0:
-            pct = min(100.0, downloaded * 100.0 / total_size)
-            mb = downloaded / (1024 * 1024)
-            tot_mb = total_size / (1024 * 1024)
-            sys.stdout.write(f"\r    Downloading {dest_path.name}: {pct:.1f}% ({mb:.1f}MB / {tot_mb:.1f}MB)")
-            sys.stdout.flush()
+    # 1. Try Python urllib with unverified SSL context (for corporate proxies)
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
 
-    urllib.request.urlretrieve(url, str(dest_path), reporthook=report_progress)
-    print()  # newline after progress
-    log(f"Saved: {dest_path.name} ({dest_path.stat().st_size / (1024*1024):.1f} MB)")
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urllib.request.urlopen(req, context=ctx, timeout=60.0) as resp, open(dest_path, "wb") as out_f:
+            total_size = int(resp.headers.get("Content-Length", 0))
+            downloaded = 0
+            block_size = 1024 * 1024  # 1MB chunks
+            while True:
+                chunk = resp.read(block_size)
+                if not chunk:
+                    break
+                out_f.write(chunk)
+                downloaded += len(chunk)
+                if total_size > 0:
+                    pct = min(100.0, downloaded * 100.0 / total_size)
+                    mb = downloaded / (1024 * 1024)
+                    tot_mb = total_size / (1024 * 1024)
+                    sys.stdout.write(f"\r    Downloading {dest_path.name}: {pct:.1f}% ({mb:.1f}MB / {tot_mb:.1f}MB)")
+                    sys.stdout.flush()
+        print()
+        log(f"Saved: {dest_path.name} ({dest_path.stat().st_size / (1024*1024):.1f} MB)")
+        return
+    except Exception as e:
+        log(f"urllib download notice ({e}). Attempting Windows curl fallback...")
+
+    # 2. Fallback to native Windows curl.exe with -k (bypasses SSL inspection)
+    try:
+        curl_cmd = ["curl", "-k", "-fSL", url, "-o", str(dest_path)]
+        subprocess.run(curl_cmd, check=True)
+        log(f"Saved via curl: {dest_path.name} ({dest_path.stat().st_size / (1024*1024):.1f} MB)")
+    except Exception as curl_err:
+        raise RuntimeError(f"Failed to download {url} via both Python and curl: {curl_err}")
 
 
 def run_cmd(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
