@@ -776,6 +776,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def _find_ollama_url(self) -> str | None:
         candidates = [
+            getattr(self.config, "ollama_url", None),
+            os.environ.get("ANALYZER_OLLAMA_URL"),
             os.environ.get("OLLAMA_HOST"),
             "http://host.docker.internal:11434",
             "http://127.0.0.1:11434",
@@ -804,6 +806,10 @@ class RequestHandler(BaseHTTPRequestHandler):
     ]
 
     def _resolve_best_model(self, installed_models: list[str]) -> str:
+        configured = getattr(self.config, "ai_model", None) or os.environ.get("ANALYZER_AI_MODEL")
+        if configured and any(configured in m for m in installed_models):
+            return configured
+
         for pref in self.PREFERRED_AI_MODELS:
             if any(pref in m for m in installed_models):
                 return pref
@@ -812,15 +818,16 @@ class RequestHandler(BaseHTTPRequestHandler):
             return local_models[0]
         if installed_models:
             return installed_models[0]
-        return "qwen2.5:3b"
+        return configured or "qwen2.5:3b"
 
     def _handle_ai_status(self) -> None:
+        default_model = getattr(self.config, "ai_model", "qwen2.5:3b")
         ollama_url = self._find_ollama_url()
         if not ollama_url:
             self._send_json({
                 "available": False,
                 "error": "Ollama service not detected on localhost:11434 or host.docker.internal:11434",
-                "model": "qwen2.5:3b",
+                "model": default_model,
                 "installed_models": [],
             })
             return
@@ -842,7 +849,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_json({
                 "available": False,
                 "error": str(exc),
-                "model": "qwen2.5:3b",
+                "model": default_model,
                 "installed_models": [],
             })
 
@@ -908,7 +915,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 messages.append({"role": item["role"], "content": item["content"]})
         messages.append({"role": "user", "content": user_message})
 
-        target_model = requested_model or "qwen2.5:3b"
+        target_model = requested_model or getattr(self.config, "ai_model", "qwen2.5:3b")
         enable_think = bool(body.get("think", False))
 
         ollama_payload = {
@@ -1022,7 +1029,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         from_micros = body.get("from")
         to_micros = body.get("to")
-        model = body.get("model") or "qwen2.5:3b"
+        model = body.get("model") or getattr(self.config, "ai_model", "qwen2.5:3b")
         use_llm = bool(body.get("use_llm", True))
 
         self.send_response(HTTPStatus.OK)

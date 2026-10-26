@@ -51,6 +51,11 @@ class Config:
     # or the CLI.
     max_upload_bytes: int = 8 * _GIB
 
+    # Default AI model for Ollama Copilot and Agentic Triage
+    ai_model: str = "qwen2.5:3b"
+    # Optional custom Ollama or LLM server endpoint URL
+    ollama_url: str | None = None
+
     @property
     def sessions_dir(self) -> Path:
         return self.data_dir / "sessions"
@@ -79,4 +84,6 @@ class Config:
             host=os.environ.get("ANALYZER_HOST", defaults.host),
             port=port,
             max_upload_bytes=max_upload,
+            ai_model=os.environ.get("ANALYZER_AI_MODEL", defaults.ai_model),
+            ollama_url=os.environ.get("ANALYZER_OLLAMA_URL", defaults.ollama_url),
         )

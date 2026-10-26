@@ -24,6 +24,8 @@ services:
       - ANALYZER_BUNDLES_DIR=/app/bundles
       - ANALYZER_RULES_DIR=/app/rules
       - ANALYZER_TOPOLOGY_PATH=/app/topology/services.yaml
+      - ANALYZER_AI_MODEL=${ANALYZER_AI_MODEL:-qwen2.5:3b}
+      - ANALYZER_OLLAMA_URL=${ANALYZER_OLLAMA_URL:-http://host.docker.internal:11434}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/api/health"]
       interval: 15s
